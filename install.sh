@@ -33,7 +33,7 @@ exec > >(tee -a "$LOG_FILE")
 exec 2>&1
 
 # Global progress tracking
-STEP_TOTAL=12
+STEP_TOTAL=14
 STEP_CURRENT=0
 
 # Functions
@@ -643,6 +643,26 @@ create_setup_flag() {
     update_progress
 }
 
+configure_config_file() {
+    print_info "Configuring database credentials"
+    
+    # Load database credentials
+    if [ -f /root/.mirza_db_credentials ]; then
+        source /root/.mirza_db_credentials
+        
+        # Update config.php with actual credentials
+        sed -i "s/{database_name}/${DB_NAME}/g" "$INSTALL_DIR/config.php"
+        sed -i "s/{username_db}/${DB_USER}/g" "$INSTALL_DIR/config.php"
+        sed -i "s/{password_db}/${DB_PASSWORD}/g" "$INSTALL_DIR/config.php"
+        
+        print_success "Database credentials configured in config.php"
+    else
+        print_error "Database credentials file not found"
+    fi
+    
+    update_progress
+}
+
 install_cli_tool() {
     print_info "Installing CLI management tool"
     
@@ -735,6 +755,7 @@ main() {
     install_composer
     setup_database
     copy_files
+    configure_config_file
     configure_nginx
     setup_supervisor
     setup_firewall
