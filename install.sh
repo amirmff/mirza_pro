@@ -515,7 +515,13 @@ configure_nginx() {
     
     # Get server IP (prefer IPv4)
     print_info "Detecting server IP"
-    SERVER_IP=$(curl -4 -s --max-time 10 ifconfig.me 2>/dev/null || curl -s --max-time 10 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}' || echo "YOUR_SERVER_IP")
+    SERVER_IP=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                curl -4 -s --max-time 5 icanhazip.com 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                curl -4 -s --max-time 5 api.ipify.org 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                wget -qO- -4 --timeout=5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                hostname -I | awk '{print $1}' || \
+                ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || \
+                echo "YOUR_SERVER_IP")
     print_success "Server IP: $SERVER_IP"
     
     # Remove default config that uses port 80
@@ -682,7 +688,13 @@ install_cli_tool() {
 }
 
 print_completion() {
-    SERVER_IP=$(curl -4 -s --max-time 10 ifconfig.me 2>/dev/null || curl -s --max-time 10 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}' || echo "YOUR_SERVER_IP")
+    SERVER_IP=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                curl -4 -s --max-time 5 icanhazip.com 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                curl -4 -s --max-time 5 api.ipify.org 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                wget -qO- -4 --timeout=5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
+                hostname -I | awk '{print $1}' | grep -oE '^[0-9.]+$' || \
+                ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || \
+                echo "YOUR_SERVER_IP")
     
     echo ""
     echo -e "${GREEN}=========================================="
