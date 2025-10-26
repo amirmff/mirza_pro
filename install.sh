@@ -21,6 +21,11 @@ INSTALL_DIR="/var/www/mirza_pro"
 LOG_FILE="/var/log/mirza_pro_install.log"
 PHP_VERSION="8.1"
 
+# Default ports
+HTTP_PORT=80
+HTTPS_PORT=443
+SSH_PORT=22
+
 # Create log file
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
@@ -107,6 +112,94 @@ check_os() {
     fi
     
     print_success "Ubuntu detected: $DISTRIB_RELEASE"
+}
+
+check_port() {
+    local port=$1
+    if netstat -tuln 2>/dev/null | grep -q ":$port " || ss -tuln 2>/dev/null | grep -q ":$port "; then
+        return 0  # Port is in use
+    else
+        return 1  # Port is free
+    fi
+}
+
+get_port_process() {
+    local port=$1
+    lsof -i :$port 2>/dev/null | tail -n 1 | awk '{print $1}' || echo "Unknown"
+}
+
+configure_ports() {
+    echo ""
+    echo -e "${BLUE}==========================================" 
+    echo "   Port Configuration"
+    echo -e "==========================================${NC}"
+    echo ""
+    
+    print_info "Checking default ports availability..."
+    echo ""
+    
+    # Check HTTP port
+    if check_port 80; then
+        local process=$(get_port_process 80)
+        print_error "Port 80 is already in use by: $process"
+        echo -e "${YELLOW}You can:"
+        echo "  1. Stop the service using port 80"
+        echo "  2. Choose a different port for Mirza Pro"
+        echo -e "${NC}"
+        
+        read -p "Do you want to use a different HTTP port? [y/N]: " -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            while true; do
+                read -p "Enter HTTP port (e.g., 8080): " HTTP_PORT
+                if [[ $HTTP_PORT =~ ^[0-9]+$ ]] && [ $HTTP_PORT -ge 1024 ] && [ $HTTP_PORT -le 65535 ]; then
+                    if check_port $HTTP_PORT; then
+                        print_error "Port $HTTP_PORT is also in use. Try another."
+                    else
+                        print_success "Port $HTTP_PORT is available"
+                        break
+                    fi
+                else
+                    print_error "Invalid port. Use 1024-65535."
+                fi
+            done
+        else
+            print_error "Cannot proceed without a free HTTP port."
+            echo "Please stop the service on port 80 and run installer again."
+            exit 1
+        fi
+    else
+        print_success "Port 80 is available for HTTP"
+    fi
+    
+    # Check HTTPS port
+    if check_port 443; then
+        local process=$(get_port_process 443)
+        print_error "Port 443 is already in use by: $process"
+        echo -e "${YELLOW}Note: HTTPS will be configured later via the web panel${NC}"
+        
+        read -p "Enter HTTPS port (or press Enter to skip SSL for now): " HTTPS_PORT_INPUT
+        if [ ! -z "$HTTPS_PORT_INPUT" ]; then
+            HTTPS_PORT=$HTTPS_PORT_INPUT
+        else
+            HTTPS_PORT=""
+        fi
+    else
+        print_success "Port 443 is available for HTTPS"
+    fi
+    
+    # Check SSH port (informational only)
+    SSH_PORT=$(ss -tlnp 2>/dev/null | grep sshd | grep -oP ':\K[0-9]+' | head -1 || echo "22")
+    print_info "SSH is running on port: $SSH_PORT"
+    
+    echo ""
+    echo -e "${GREEN}Port Configuration Summary:${NC}"
+    echo "  HTTP:  $HTTP_PORT"
+    echo "  HTTPS: ${HTTPS_PORT:-Not configured yet}"
+    echo "  SSH:   $SSH_PORT"
+    echo ""
+    
+    read -p "Press Enter to continue with these settings..." -r
+    echo ""
 }
 
 install_dependencies() {
@@ -268,9 +361,9 @@ configure_nginx() {
     SERVER_IP=$(curl -s --max-time 10 ifconfig.me || echo "YOUR_SERVER_IP")
     print_success "Server IP: $SERVER_IP"
     
-    cat > /etc/nginx/sites-available/mirza_pro <<'NGINX_EOF'
+    cat > /etc/nginx/sites-available/mirza_pro <<NGINX_EOF
 server {
-    listen 80;
+    listen ${HTTP_PORT};
     server_name _;
     
     root /var/www/mirza_pro;
@@ -358,15 +451,24 @@ setup_firewall() {
     ufw default deny incoming > /dev/null 2>&1
     ufw default allow outgoing > /dev/null 2>&1
     
-    # Allow SSH, HTTP, HTTPS
-    ufw allow 22/tcp > /dev/null 2>&1
-    ufw allow 80/tcp > /dev/null 2>&1
-    ufw allow 443/tcp > /dev/null 2>&1
+    # Allow SSH
+    ufw allow ${SSH_PORT}/tcp > /dev/null 2>&1
+    print_info "Allowed SSH on port $SSH_PORT"
+    
+    # Allow HTTP
+    ufw allow ${HTTP_PORT}/tcp > /dev/null 2>&1
+    print_info "Allowed HTTP on port $HTTP_PORT"
+    
+    # Allow HTTPS if configured
+    if [ ! -z "$HTTPS_PORT" ]; then
+        ufw allow ${HTTPS_PORT}/tcp > /dev/null 2>&1
+        print_info "Allowed HTTPS on port $HTTPS_PORT"
+    fi
     
     # Enable firewall
     ufw --force enable > /dev/null 2>&1
     
-    print_success "Firewall configured (SSH/HTTP/HTTPS allowed)"
+    print_success "Firewall configured"
     update_progress
 }
 
@@ -380,7 +482,7 @@ create_setup_flag() {
 }
 
 print_completion() {
-    SERVER_IP=$(curl -s ifconfig.me)
+    SERVER_IP=$(curl -s --max-time 10 ifconfig.me || hostname -I | awk '{print $1}')
     
     echo ""
     echo -e "${GREEN}=========================================="
@@ -390,7 +492,11 @@ print_completion() {
     echo -e "${BLUE}Next Steps:${NC}"
     echo ""
     echo "1. Access the web panel:"
-    echo "   http://$SERVER_IP/webpanel/"
+    if [ "$HTTP_PORT" = "80" ]; then
+        echo "   http://$SERVER_IP/webpanel/"
+    else
+        echo "   http://$SERVER_IP:$HTTP_PORT/webpanel/"
+    fi
     echo ""
     echo "2. Complete the setup wizard with:"
     echo "   - Telegram Bot Token"
@@ -405,6 +511,12 @@ print_completion() {
     echo ""
     echo -e "${YELLOW}For SSL/HTTPS setup:${NC}"
     echo "   Use the web panel after initial setup"
+    echo ""
+    echo -e "${BLUE}Port Configuration:${NC}"
+    echo "   HTTP:  $HTTP_PORT"
+    if [ ! -z "$HTTPS_PORT" ]; then
+        echo "   HTTPS: $HTTPS_PORT"
+    fi
     echo ""
     echo -e "${BLUE}Useful commands:${NC}"
     echo "   supervisorctl status mirza_pro_bot  - Check bot status"
@@ -426,6 +538,9 @@ main() {
     print_info "Running pre-installation checks"
     check_root
     check_os
+    
+    # Port configuration
+    configure_ports
     
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
