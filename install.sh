@@ -650,10 +650,17 @@ configure_config_file() {
     if [ -f /root/.mirza_db_credentials ]; then
         source /root/.mirza_db_credentials
         
-        # Update config.php with actual credentials
-        sed -i "s/{database_name}/${DB_NAME}/g" "$INSTALL_DIR/config.php"
-        sed -i "s/{username_db}/${DB_USER}/g" "$INSTALL_DIR/config.php"
-        sed -i "s/{password_db}/${DB_PASSWORD}/g" "$INSTALL_DIR/config.php"
+        # Update config.php with actual credentials using awk (handles special chars)
+        awk -v db="$DB_NAME" -v user="$DB_USER" -v pass="$DB_PASSWORD" '{
+            gsub(/{database_name}/, db);
+            gsub(/{username_db}/, user);
+            gsub(/{password_db}/, pass);
+            print
+        }' "$INSTALL_DIR/config.php" > "$INSTALL_DIR/config.php.tmp"
+        
+        mv "$INSTALL_DIR/config.php.tmp" "$INSTALL_DIR/config.php"
+        chown www-data:www-data "$INSTALL_DIR/config.php"
+        chmod 640 "$INSTALL_DIR/config.php"
         
         print_success "Database credentials configured in config.php"
     else

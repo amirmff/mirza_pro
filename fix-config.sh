@@ -51,9 +51,23 @@ echo ""
 
 # Update config.php
 echo -e "${YELLOW}Updating config.php...${NC}"
-sed -i "s/{database_name}/${DB_NAME}/g" "$INSTALL_DIR/config.php"
-sed -i "s/{username_db}/${DB_USER}/g" "$INSTALL_DIR/config.php"
-sed -i "s/{password_db}/${DB_PASSWORD}/g" "$INSTALL_DIR/config.php"
+
+# Escape special characters for sed
+DB_NAME_ESCAPED=$(echo "$DB_NAME" | sed 's/[&/\\]/\\&/g')
+DB_USER_ESCAPED=$(echo "$DB_USER" | sed 's/[&/\\]/\\&/g')
+DB_PASSWORD_ESCAPED=$(echo "$DB_PASSWORD" | sed 's/[&/\\]/\\&/g')
+
+# Use a temporary file for safe replacement
+awk -v db="$DB_NAME" -v user="$DB_USER" -v pass="$DB_PASSWORD" '{
+    gsub(/{database_name}/, db);
+    gsub(/{username_db}/, user);
+    gsub(/{password_db}/, pass);
+    print
+}' "$INSTALL_DIR/config.php" > "$INSTALL_DIR/config.php.tmp"
+
+mv "$INSTALL_DIR/config.php.tmp" "$INSTALL_DIR/config.php"
+chown www-data:www-data "$INSTALL_DIR/config.php"
+chmod 640 "$INSTALL_DIR/config.php"
 
 # Verify the changes
 if grep -q "{database_name}" "$INSTALL_DIR/config.php"; then
