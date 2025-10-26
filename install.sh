@@ -235,8 +235,9 @@ install_nginx() {
     run_with_spinner "Installing Nginx web server" \
         "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx"
     
-    run_with_spinner "Starting Nginx service" \
-        "systemctl enable nginx && systemctl start nginx"
+    # Don't start Nginx yet - configure it first with custom port
+    run_with_spinner "Stopping default Nginx" \
+        "systemctl stop nginx || true"
 }
 
 install_php() {
@@ -366,6 +367,9 @@ configure_nginx() {
     SERVER_IP=$(curl -s --max-time 10 ifconfig.me || echo "YOUR_SERVER_IP")
     print_success "Server IP: $SERVER_IP"
     
+    # Remove default config that uses port 80
+    rm -f /etc/nginx/sites-enabled/default
+    
     cat > /etc/nginx/sites-available/mirza_pro <<NGINX_EOF
 server {
     listen ${HTTP_PORT};
@@ -418,11 +422,10 @@ NGINX_EOF
     
     # Enable site
     ln -sf /etc/nginx/sites-available/mirza_pro /etc/nginx/sites-enabled/
-    rm -f /etc/nginx/sites-enabled/default
     
-    # Test and reload
-    run_with_spinner "Testing and reloading Nginx" \
-        "nginx -t && systemctl reload nginx"
+    # Test, enable and start Nginx with custom port
+    run_with_spinner "Testing and starting Nginx on port $HTTP_PORT" \
+        "nginx -t && systemctl enable nginx && systemctl start nginx"
     
     print_success "Nginx configured: http://$SERVER_IP"
 }
