@@ -1,11 +1,34 @@
 <?php
+// Check if setup wizard is needed
+$needs_setup_file = __DIR__ . '/webpanel/.needs_setup';
+$is_setup_wizard = (basename($_SERVER['PHP_SELF']) === 'setup.php');
+
+// Allow setup wizard to run without credentials
+if (file_exists($needs_setup_file) && $is_setup_wizard) {
+    // Setup wizard will handle DB connection
+    $APIKEY = '{API_KEY}';
+    $adminnumber = '{admin_number}';
+    $domainhosts = '{domain_name}';
+    $usernamebot = '{username_bot}';
+    $new_marzban = true;
+    return;
+}
+
+// Regular config loading
 $dbname = '{database_name}';
 $usernamedb = '{username_db}';
 $passworddb = '{password_db}';
 
 // Check if credentials are still placeholders
 if ($dbname === '{database_name}' || $usernamedb === '{username_db}' || $passworddb === '{password_db}') {
-    die("ERROR: Database credentials not configured. Please edit config.php with your actual database credentials.");
+    if (file_exists($needs_setup_file)) {
+        // Redirect to setup wizard
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'];
+        header("Location: {$protocol}://{$host}/webpanel/setup.php");
+        exit;
+    }
+    die("ERROR: Database credentials not configured. Please run the setup wizard first.");
 }
 
 $connect = mysqli_connect("localhost", $usernamedb, $passworddb, $dbname);
@@ -35,7 +58,14 @@ $usernamebot = '{username_bot}';
 
 // Check if bot token is configured
 if ($APIKEY === '{API_KEY}') {
-    die("ERROR: Telegram bot API key not configured. Please edit config.php.");
+    if (file_exists($needs_setup_file)) {
+        // Redirect to setup wizard
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'];
+        header("Location: {$protocol}://{$host}/webpanel/setup.php");
+        exit;
+    }
+    die("ERROR: Telegram bot API key not configured. Please run the setup wizard first.");
 }
 
 $new_marzban = true;

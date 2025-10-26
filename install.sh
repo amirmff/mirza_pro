@@ -402,18 +402,19 @@ DROP DATABASE IF EXISTS test;
 DELETE FROM mysql.db WHERE Db='test' OR Db='test_%';
 FLUSH PRIVILEGES;
 EOF
-        print_success "MySQL secured"
+        print_success "MySQL secured with new root password"
     else
-        print_info "MySQL already has authentication configured"
+        print_info "MySQL already configured (VPN panel or other service detected)"
+        print_info "Will use Debian maintenance credentials for database setup"
+        # Save marker that we're using existing MySQL
+        echo "EXISTING_MYSQL=true" > /root/.mysql_root_password
     fi
     
     systemctl enable mysql > /dev/null 2>&1
     update_progress
     
-    # Save credentials
-    echo "$MYSQL_ROOT_PASSWORD" > /root/.mysql_root_password
-    chmod 600 /root/.mysql_root_password
-    print_success "MySQL credentials saved to /root/.mysql_root_password"
+    chmod 600 /root/.mysql_root_password 2>/dev/null || true
+    print_success "MySQL setup complete"
 }
 
 install_composer() {
@@ -441,35 +442,66 @@ setup_database() {
     
     print_info "Creating database and user"
     
-    # Try with password first, then sudo
-    if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+    local DB_CREATED=false
+    
+    # Try root password if we have one
+    if [ ! -z "$MYSQL_ROOT_PASSWORD" ] && [ "$MYSQL_ROOT_PASSWORD" != "EXISTING_MYSQL=true" ]; then
         if mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1;" > /dev/null 2>&1; then
             mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<EOF 2>&1 | grep -v "Warning" || true
 CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+DROP USER IF EXISTS '${DB_USER}'@'localhost';
+CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
 GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
-            print_success "Database created with password auth"
-        else
-            # Try with sudo
+            if [ $? -eq 0 ]; then
+                print_success "Database created using MySQL root password"
+                DB_CREATED=true
+            fi
+        fi
+    fi
+    
+    # Try Debian maintenance user (works with existing MySQL from VPN panels)
+    if [ "$DB_CREATED" = "false" ] && [ -f /etc/mysql/debian.cnf ]; then
+        print_info "Using Debian maintenance credentials (existing MySQL detected)"
+        if mysql --defaults-file=/etc/mysql/debian.cnf -e "SELECT 1;" > /dev/null 2>&1; then
+            mysql --defaults-file=/etc/mysql/debian.cnf <<EOF 2>&1 | grep -v "Warning" || true
+CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+DROP USER IF EXISTS '${DB_USER}'@'localhost';
+CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+            if [ $? -eq 0 ]; then
+                print_success "Database created using Debian maintenance user"
+                print_info "✓ Your VPN panel database is untouched - Mirza Pro uses separate database"
+                DB_CREATED=true
+            fi
+        fi
+    fi
+    
+    # Fallback to sudo mysql (fresh install)
+    if [ "$DB_CREATED" = "false" ]; then
+        print_info "Trying sudo mysql access"
+        if sudo mysql -e "SELECT 1;" > /dev/null 2>&1; then
             sudo mysql <<EOF 2>&1 | grep -v "Warning" || true
 CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+DROP USER IF EXISTS '${DB_USER}'@'localhost';
+CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
 GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
-            print_success "Database created with sudo auth"
+            if [ $? -eq 0 ]; then
+                print_success "Database created using sudo"
+                DB_CREATED=true
+            fi
         fi
-    else
-        # No password file, try sudo
-        sudo mysql <<EOF 2>&1 | grep -v "Warning" || true
-CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
-GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
-EOF
-        print_success "Database created with sudo auth"
+    fi
+    
+    # Check if database creation succeeded
+    if [ "$DB_CREATED" = "false" ]; then
+        print_error "Failed to create database. Please check MySQL access."
+        return 1
     fi
     
     update_progress
@@ -607,33 +639,81 @@ EOF
 }
 
 setup_firewall() {
-    print_info "Configuring UFW firewall"
-    
-    # Reset UFW
-    ufw --force reset > /dev/null 2>&1
-    
-    # Default policies
-    ufw default deny incoming > /dev/null 2>&1
-    ufw default allow outgoing > /dev/null 2>&1
-    
-    # Allow SSH
-    ufw allow ${SSH_PORT}/tcp > /dev/null 2>&1
-    print_info "Allowed SSH on port $SSH_PORT"
-    
-    # Allow HTTP
-    ufw allow ${HTTP_PORT}/tcp > /dev/null 2>&1
-    print_info "Allowed HTTP on port $HTTP_PORT"
-    
-    # Allow HTTPS if configured
-    if [ ! -z "$HTTPS_PORT" ]; then
-        ufw allow ${HTTPS_PORT}/tcp > /dev/null 2>&1
-        print_info "Allowed HTTPS on port $HTTPS_PORT"
+    # Restore stdin if piped (for curl | bash execution)
+    if [ ! -t 0 ]; then
+        exec < /dev/tty
     fi
     
-    # Enable firewall
-    ufw --force enable > /dev/null 2>&1
+    echo ""
+    print_info "UFW Firewall Configuration"
+    echo ""
+    echo -e "${YELLOW}⚠ WARNING: If you have a VPN panel (Marzban, X-UI, etc.) installed,"
+    echo "  configuring UFW may interfere with your existing firewall rules."
+    echo -e "${NC}"
+    echo "Do you want to configure UFW firewall for Mirza Pro?"
+    echo "  - Select 'y' if this is a fresh server"
+    echo "  - Select 'n' if you have VPN panel or custom firewall rules"
+    echo ""
     
-    print_success "Firewall configured"
+    read -p "Configure UFW firewall? [y/N]: " -r
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Skipping UFW configuration"
+        print_info "Remember to manually allow ports: SSH($SSH_PORT), HTTP($HTTP_PORT)"
+        update_progress
+        return 0
+    fi
+    
+    print_info "Configuring UFW firewall"
+    
+    # Check if UFW is active with existing rules
+    if ufw status | grep -q "Status: active"; then
+        print_info "UFW is already active. Adding Mirza Pro ports to existing rules..."
+        
+        # Just add our ports without resetting
+        ufw allow ${SSH_PORT}/tcp > /dev/null 2>&1
+        print_info "Allowed SSH on port $SSH_PORT"
+        
+        ufw allow ${HTTP_PORT}/tcp > /dev/null 2>&1
+        print_info "Allowed HTTP on port $HTTP_PORT"
+        
+        if [ ! -z "$HTTPS_PORT" ]; then
+            ufw allow ${HTTPS_PORT}/tcp > /dev/null 2>&1
+            print_info "Allowed HTTPS on port $HTTPS_PORT"
+        fi
+        
+        print_success "Firewall rules updated (existing rules preserved)"
+    else
+        # Fresh UFW setup
+        print_info "Setting up fresh UFW configuration"
+        
+        # Reset UFW
+        ufw --force reset > /dev/null 2>&1
+        
+        # Default policies
+        ufw default deny incoming > /dev/null 2>&1
+        ufw default allow outgoing > /dev/null 2>&1
+        
+        # Allow SSH
+        ufw allow ${SSH_PORT}/tcp > /dev/null 2>&1
+        print_info "Allowed SSH on port $SSH_PORT"
+        
+        # Allow HTTP
+        ufw allow ${HTTP_PORT}/tcp > /dev/null 2>&1
+        print_info "Allowed HTTP on port $HTTP_PORT"
+        
+        # Allow HTTPS if configured
+        if [ ! -z "$HTTPS_PORT" ]; then
+            ufw allow ${HTTPS_PORT}/tcp > /dev/null 2>&1
+            print_info "Allowed HTTPS on port $HTTPS_PORT"
+        fi
+        
+        # Enable firewall
+        ufw --force enable > /dev/null 2>&1
+        
+        print_success "Firewall configured"
+    fi
+    
     update_progress
 }
 
@@ -647,32 +727,30 @@ create_setup_flag() {
 }
 
 configure_config_file() {
-    print_info "Configuring database credentials"
+    print_info "Preparing web panel for first-time setup"
     
-    # Load database credentials
+    # Save database credentials for setup wizard to pre-fill
     if [ -f /root/.mirza_db_credentials ]; then
         source /root/.mirza_db_credentials
         
-        # Update config.php with actual credentials using awk (handles special chars)
-        # But SKIP the validation check line to keep it checking for placeholders
-        awk -v db="$DB_NAME" -v user="$DB_USER" -v pass="$DB_PASSWORD" '
-        /if \(\$dbname === .*database_name.*\)/ { print; next }
-        {
-            gsub(/{database_name}/, db);
-            gsub(/{username_db}/, user);
-            gsub(/{password_db}/, pass);
-            print
-        }' "$INSTALL_DIR/config.php" > "$INSTALL_DIR/config.php.tmp"
-        
-        mv "$INSTALL_DIR/config.php.tmp" "$INSTALL_DIR/config.php"
-        chown www-data:www-data "$INSTALL_DIR/config.php"
-        chmod 640 "$INSTALL_DIR/config.php"
-        
-        print_success "Database credentials configured in config.php"
-    else
-        print_error "Database credentials file not found"
+        # Create a JSON file with DB credentials for setup wizard
+        cat > "$INSTALL_DIR/webpanel/.db_credentials.json" <<EOF
+{
+    "db_host": "localhost",
+    "db_name": "${DB_NAME}",
+    "db_user": "${DB_USER}",
+    "db_password": "${DB_PASSWORD}"
+}
+EOF
+        chown www-data:www-data "$INSTALL_DIR/webpanel/.db_credentials.json"
+        chmod 600 "$INSTALL_DIR/webpanel/.db_credentials.json"
     fi
     
+    # Ensure config.php has correct permissions
+    chown www-data:www-data "$INSTALL_DIR/config.php"
+    chmod 640 "$INSTALL_DIR/config.php"
+    
+    print_success "Config file ready for setup wizard"
     update_progress
 }
 
