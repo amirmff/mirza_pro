@@ -3,8 +3,8 @@ $dbname = '{database_name}';
 $usernamedb = '{username_db}';
 $passworddb = '{password_db}';
 
-// Check if credentials are configured
-if ($dbname === '{database_name}' || $usernamedb === '{username_db}') {
+// Check if credentials are still placeholders
+if ($dbname === '{database_name}' || $usernamedb === '{username_db}' || $passworddb === '{password_db}') {
     die("ERROR: Database credentials not configured. Please edit config.php with your actual database credentials.");
 }
 
