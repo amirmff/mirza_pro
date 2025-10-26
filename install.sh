@@ -513,9 +513,9 @@ copy_files() {
 configure_nginx() {
     print_info "Configuring Nginx web server"
     
-    # Get server IP
+    # Get server IP (prefer IPv4)
     print_info "Detecting server IP"
-    SERVER_IP=$(curl -s --max-time 10 ifconfig.me || echo "YOUR_SERVER_IP")
+    SERVER_IP=$(curl -4 -s --max-time 10 ifconfig.me 2>/dev/null || curl -s --max-time 10 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}' || echo "YOUR_SERVER_IP")
     print_success "Server IP: $SERVER_IP"
     
     # Remove default config that uses port 80
@@ -643,8 +643,19 @@ create_setup_flag() {
     update_progress
 }
 
+install_cli_tool() {
+    print_info "Installing CLI management tool"
+    
+    # Copy CLI tool to /usr/local/bin
+    cp "$INSTALL_DIR/mirza-cli.sh" /usr/local/bin/mirza
+    chmod +x /usr/local/bin/mirza
+    
+    print_success "CLI tool installed: Run 'mirza' to manage bot"
+    update_progress
+}
+
 print_completion() {
-    SERVER_IP=$(curl -s --max-time 10 ifconfig.me || hostname -I | awk '{print $1}')
+    SERVER_IP=$(curl -4 -s --max-time 10 ifconfig.me 2>/dev/null || curl -s --max-time 10 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}' || echo "YOUR_SERVER_IP")
     
     echo ""
     echo -e "${GREEN}=========================================="
@@ -680,7 +691,10 @@ print_completion() {
         echo "   HTTPS: $HTTPS_PORT"
     fi
     echo ""
-    echo -e "${BLUE}Useful commands:${NC}"
+    echo -e "${BLUE}Management:${NC}"
+    echo -e "   ${GREEN}mirza${NC}                               - Open CLI management menu"
+    echo ""
+    echo -e "${BLUE}Or use these commands directly:${NC}"
     echo "   supervisorctl status mirza_pro_bot  - Check bot status"
     echo "   supervisorctl restart mirza_pro_bot - Restart bot"
     echo "   tail -f /var/log/mirza_pro_bot.log  - View bot logs"
@@ -725,6 +739,7 @@ main() {
     setup_supervisor
     setup_firewall
     create_setup_flag
+    install_cli_tool
     
     # Completion
     echo ""
