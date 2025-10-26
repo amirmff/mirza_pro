@@ -19,7 +19,7 @@ NC='\033[0m' # No Color
 # Configuration
 INSTALL_DIR="/var/www/mirza_pro"
 LOG_FILE="/var/log/mirza_pro_install.log"
-PHP_VERSION="8.1"
+PHP_VERSION="8.2"
 
 # Default ports
 HTTP_PORT=80
@@ -577,7 +577,7 @@ server {
     # PHP handling
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
     }
@@ -599,7 +599,7 @@ server {
     # Telegram webhook
     location /webhooks.php {
         try_files $uri =404;
-        fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
     }
