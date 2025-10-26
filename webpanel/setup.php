@@ -85,11 +85,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
             );
             
-            // Import database schema
+            // Import database schema or create admin table
             $sql_file = __DIR__ . '/../database/schema.sql';
             if (file_exists($sql_file)) {
                 $sql = file_get_contents($sql_file);
                 $pdo->exec($sql);
+            } else {
+                // Fallback: create admin table directly
+                $pdo->exec("CREATE TABLE IF NOT EXISTS `admin` (
+                    `id_admin` INT(11) NOT NULL AUTO_INCREMENT,
+                    `username_admin` VARCHAR(255) NOT NULL,
+                    `password_admin` VARCHAR(255) NOT NULL,
+                    `rule` VARCHAR(50) NOT NULL DEFAULT 'administrator',
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id_admin`),
+                    UNIQUE KEY `username_admin` (`username_admin`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
             }
             
             // Create admin user
@@ -129,12 +140,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Load saved DB credentials if available
-if ($step == 1 && file_exists('/root/.mirza_db_credentials')) {
-    $creds = parse_ini_file('/root/.mirza_db_credentials');
-    $_SESSION['db_name'] = $creds['DB_NAME'] ?? '';
-    $_SESSION['db_user'] = $creds['DB_USER'] ?? '';
-    $_SESSION['db_pass'] = $creds['DB_PASSWORD'] ?? '';
+// Load saved DB credentials if available (created by installer)
+$db_creds_file = __DIR__ . '/.db_credentials.json';
+if ($step == 1 && file_exists($db_creds_file)) {
+    $creds_json = file_get_contents($db_creds_file);
+    $creds = json_decode($creds_json, true);
+    if ($creds) {
+        $_SESSION['db_host'] = $creds['db_host'] ?? 'localhost';
+        $_SESSION['db_name'] = $creds['db_name'] ?? '';
+        $_SESSION['db_user'] = $creds['db_user'] ?? '';
+        $_SESSION['db_pass'] = $creds['db_password'] ?? '';
+    }
 }
 ?>
 <!DOCTYPE html>
