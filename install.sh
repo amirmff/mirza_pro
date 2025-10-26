@@ -50,7 +50,21 @@ error_handler() {
 update_progress() {
     STEP_CURRENT=$((STEP_CURRENT + 1))
     local percent=$((STEP_CURRENT * 100 / STEP_TOTAL))
-    echo -ne "\r${BLUE}[Progress: ${percent}%]${NC}\n"
+    draw_progress_bar $percent
+}
+
+draw_progress_bar() {
+    local percent=$1
+    local filled=$((percent / 2))
+    local empty=$((50 - filled))
+    local bar=""
+    
+    # Build progress bar
+    for ((i=0; i<filled; i++)); do bar+="█"; done
+    for ((i=0; i<empty; i++)); do bar+="░"; done
+    
+    echo -e "${BLUE}[${bar}] ${percent}%${NC}"
+    echo ""
 }
 
 run_with_spinner() {
@@ -58,16 +72,82 @@ run_with_spinner() {
     local command="$2"
     local log_marker="===== $message ====="
     
-    print_info "$message"
+    echo -e "${YELLOW}▶ $message${NC}"
     echo "$log_marker" >> "$LOG_FILE"
     
     # Run command with timeout
     if timeout 600 bash -c "$command" >> "$LOG_FILE" 2>&1; then
-        print_success "$message - Done"
+        echo -e "${GREEN}✓ $message - Done${NC}"
         update_progress
         return 0
     else
-        print_error "$message - Failed or timed out"
+        echo -e "${RED}✗ $message - Failed or timed out${NC}"
+        return 1
+    fi
+}
+
+run_with_live_output() {
+    local message="$1"
+    local command="$2"
+    local log_marker="===== $message ====="
+    
+    echo -e "${YELLOW}▶ $message${NC}"
+    echo "$log_marker" >> "$LOG_FILE"
+    
+    # Create temp file for output
+    local temp_log=$(mktemp)
+    
+    # Run command in background and show live progress
+    bash -c "$command" > "$temp_log" 2>&1 &
+    local pid=$!
+    
+    # Better spinner with Braille patterns
+    local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    local last_shown=""
+    
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) % 10 ))
+        
+        # Show last meaningful line of output
+        if [ -s "$temp_log" ]; then
+            # Look for package installation lines
+            local current_line=$(tail -n 20 "$temp_log" | \
+                grep -E '(Setting up|Unpacking|Preparing|Processing|Selecting|Get:|Fetched)' | \
+                tail -n 1 | \
+                sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+                cut -c1-65)
+            
+            if [ ! -z "$current_line" ] && [ "$current_line" != "$last_shown" ]; then
+                last_shown="$current_line"
+                printf "\r\033[K  ${BLUE}${spin:$i:1} ${current_line}...${NC}"
+            else
+                printf "\r  ${BLUE}${spin:$i:1} Working...${NC}"
+            fi
+        else
+            printf "\r  ${BLUE}${spin:$i:1} Starting...${NC}"
+        fi
+        
+        sleep 0.15
+    done
+    
+    wait $pid
+    local exit_code=$?
+    
+    # Clear the spinner line
+    printf "\r\033[K"
+    
+    # Append to main log
+    cat "$temp_log" >> "$LOG_FILE"
+    rm -f "$temp_log"
+    
+    if [ $exit_code -eq 0 ]; then
+        echo -e "${GREEN}✓ $message - Done${NC}"
+        update_progress
+        return 0
+    else
+        echo -e "${RED}✗ $message - Failed${NC}"
+        echo -e "${YELLOW}Check log for details: tail -n 50 $LOG_FILE${NC}"
         return 1
     fi
 }
@@ -209,16 +289,16 @@ configure_ports() {
 
 install_dependencies() {
     # Update package list
-    run_with_spinner "Updating package lists" \
-        "apt-get update -qq"
+    run_with_live_output "Updating package lists" \
+        "apt-get update"
     
     # Fix any broken packages
     run_with_spinner "Fixing any broken packages" \
         "DEBIAN_FRONTEND=noninteractive apt-get install -f -y -qq"
     
     # Install required packages
-    run_with_spinner "Installing system dependencies" \
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    run_with_live_output "Installing system dependencies" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y \
             software-properties-common \
             curl \
             wget \
@@ -241,13 +321,26 @@ install_nginx() {
 }
 
 install_php() {
-    # Add PHP repository
-    run_with_spinner "Adding PHP repository" \
-        "LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php && apt-get update -qq"
+    # Kill any hanging apt processes first
+    print_info "Checking for package manager locks"
+    killall -q apt apt-get dpkg 2>/dev/null || true
+    rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
+    dpkg --configure -a 2>/dev/null || true
+    sleep 2
+    print_success "Package manager ready"
     
-    # Install PHP and extensions
-    run_with_spinner "Installing PHP ${PHP_VERSION} and extensions" \
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    # Add PHP repository
+    run_with_live_output "Adding PHP repository (this may take a minute)" \
+        "LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php && apt-get update"
+    
+    # Install PHP and extensions with live output
+    echo ""
+    print_info "Installing PHP ${PHP_VERSION} and extensions"
+    print_info "This will download ~50MB and may take 3-5 minutes"
+    echo ""
+    
+    run_with_live_output "Installing PHP packages" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold' \
             php${PHP_VERSION} \
             php${PHP_VERSION}-fpm \
             php${PHP_VERSION}-mysql \
@@ -279,8 +372,8 @@ install_mysql() {
     print_success "Password generated"
     
     # Install MySQL
-    run_with_spinner "Installing MySQL server" \
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-server"
+    run_with_live_output "Installing MySQL server" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server"
     
     # Start MySQL if not running
     systemctl start mysql || true
