@@ -513,14 +513,11 @@ copy_files() {
 configure_nginx() {
     print_info "Configuring Nginx web server"
     
-    # Get server IP (prefer IPv4)
+    # Get server IP (prefer local detection - faster and more reliable)
     print_info "Detecting server IP"
-    SERVER_IP=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                curl -4 -s --max-time 5 icanhazip.com 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                curl -4 -s --max-time 5 api.ipify.org 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                wget -qO- -4 --timeout=5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                hostname -I | awk '{print $1}' || \
-                ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || \
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | grep -oE '^[0-9.]+$' || \
+                ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || \
+                curl -4 -s --max-time 3 icanhazip.com 2>/dev/null | grep -oE '^[0-9.]+$' || \
                 echo "YOUR_SERVER_IP")
     print_success "Server IP: $SERVER_IP"
     
@@ -657,7 +654,10 @@ configure_config_file() {
         source /root/.mirza_db_credentials
         
         # Update config.php with actual credentials using awk (handles special chars)
-        awk -v db="$DB_NAME" -v user="$DB_USER" -v pass="$DB_PASSWORD" '{
+        # But SKIP the validation check line to keep it checking for placeholders
+        awk -v db="$DB_NAME" -v user="$DB_USER" -v pass="$DB_PASSWORD" '
+        /if \(\$dbname === .*database_name.*\)/ { print; next }
+        {
             gsub(/{database_name}/, db);
             gsub(/{username_db}/, user);
             gsub(/{password_db}/, pass);
@@ -688,12 +688,9 @@ install_cli_tool() {
 }
 
 print_completion() {
-    SERVER_IP=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                curl -4 -s --max-time 5 icanhazip.com 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                curl -4 -s --max-time 5 api.ipify.org 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                wget -qO- -4 --timeout=5 ifconfig.me 2>/dev/null | grep -oE '^[0-9.]+$' || \
-                hostname -I | awk '{print $1}' | grep -oE '^[0-9.]+$' || \
-                ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || \
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | grep -oE '^[0-9.]+$' || \
+                ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || \
+                curl -4 -s --max-time 3 icanhazip.com 2>/dev/null | grep -oE '^[0-9.]+$' || \
                 echo "YOUR_SERVER_IP")
     
     echo ""
