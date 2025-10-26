@@ -379,14 +379,14 @@ install_mysql() {
     systemctl start mysql || true
     sleep 3
     
-    # Secure MySQL installation
+    # Secure MySQL installation (use sudo to authenticate)
     print_info "Securing MySQL installation"
-    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';" 2>&1 | grep -v "Warning" || true
-    mysql -e "DELETE FROM mysql.user WHERE User='';" 2>&1 | grep -v "Warning" || true
-    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>&1 | grep -v "Warning" || true
-    mysql -e "DROP DATABASE IF EXISTS test;" 2>&1 | grep -v "Warning" || true
-    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>&1 | grep -v "Warning" || true
-    mysql -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Warning" || true
+    sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';" 2>&1 | grep -v "Warning" || true
+    sudo mysql -e "DELETE FROM mysql.user WHERE User='';" 2>&1 | grep -v "Warning" || true
+    sudo mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>&1 | grep -v "Warning" || true
+    sudo mysql -e "DROP DATABASE IF EXISTS test;" 2>&1 | grep -v "Warning" || true
+    sudo mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>&1 | grep -v "Warning" || true
+    sudo mysql -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Warning" || true
     print_success "MySQL secured"
     
     systemctl enable mysql > /dev/null 2>&1
@@ -463,9 +463,9 @@ configure_nginx() {
     # Remove default config that uses port 80
     rm -f /etc/nginx/sites-enabled/default
     
-    cat > /etc/nginx/sites-available/mirza_pro <<NGINX_EOF
+    cat > /etc/nginx/sites-available/mirza_pro <<'NGINX_EOF'
 server {
-    listen ${HTTP_PORT};
+    listen HTTP_PORT_PLACEHOLDER;
     server_name _;
     
     root /var/www/mirza_pro;
@@ -512,6 +512,9 @@ server {
     }
 }
 NGINX_EOF
+    
+    # Replace port placeholder
+    sed -i "s/HTTP_PORT_PLACEHOLDER/${HTTP_PORT}/" /etc/nginx/sites-available/mirza_pro
     
     # Enable site
     ln -sf /etc/nginx/sites-available/mirza_pro /etc/nginx/sites-enabled/
