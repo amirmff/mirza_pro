@@ -129,6 +129,11 @@ get_port_process() {
 }
 
 configure_ports() {
+    # Restore stdin if piped (for curl | bash execution)
+    if [ ! -t 0 ]; then
+        exec < /dev/tty
+    fi
+    
     echo ""
     echo -e "${BLUE}==========================================" 
     echo "   Port Configuration"
