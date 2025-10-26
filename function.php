@@ -93,7 +93,12 @@ function tronratee()
 function nowPayments($payment, $price_amount, $order_id, $order_description)
 {
     global $domainhosts;
-    $apinowpayments = select("PaySetting", "*", "NamePay", "marchent_tronseller", "select")['ValuePay'];
+    $paySettings = select("PaySetting", "*", "NamePay", "marchent_tronseller", "select");
+    if (!$paySettings || !isset($paySettings['ValuePay'])) {
+        error_log("NowPayments API key not found in database");
+        return ['error' => 'Payment gateway not configured'];
+    }
+    $apinowpayments = $paySettings['ValuePay'];
     $curl = curl_init();
     curl_setopt_array($curl, array(
         CURLOPT_URL => 'https://api.nowpayments.io/v1/' . $payment,
@@ -122,7 +127,12 @@ function nowPayments($payment, $price_amount, $order_id, $order_description)
 }
 function StatusPayment($paymentid)
 {
-    $apinowpayments = select("PaySetting", "*", "NamePay", "marchent_tronseller", "select")['ValuePay'];
+    $paySettings = select("PaySetting", "*", "NamePay", "marchent_tronseller", "select");
+    if (!$paySettings || !isset($paySettings['ValuePay'])) {
+        error_log("NowPayments API key not found in database");
+        return ['error' => 'Payment gateway not configured'];
+    }
+    $apinowpayments = $paySettings['ValuePay'];
     $curl = curl_init();
     curl_setopt_array($curl, array(
         CURLOPT_URL => 'https://api.nowpayments.io/v1/payment/' . $paymentid,
@@ -215,9 +225,8 @@ function generateUsername($from_id, $Metode, $username, $randomString, $text, $n
     $setting = select("setting", "*", null, null, "select");
     $user = select("user", "*", "id", $from_id, "select");
     if ($user == false) {
-        $user = array();
         $user = array(
-            'number_username' => '',
+            'number_username' => 0,
         );
     }
     if ($Metode == "آیدی عددی + حروف و عدد رندوم") {
@@ -226,12 +235,14 @@ function generateUsername($from_id, $Metode, $username, $randomString, $text, $n
         if ($username == "NOT_USERNAME") {
             if (preg_match('/^\w{3,32}$/', $namecustome)) {
                 $username = $namecustome;
+            } else {
+                $username = "user";
             }
         }
         return $username . "_" . $user['number_username'];
-    } elseif ($Metode == "نام کاربری دلخواه")
+    } elseif ($Metode == "نام کاربری دلخواه") {
         return $text;
-    elseif ($Metode == "نام کاربری دلخواه + عدد رندوم") {
+    } elseif ($Metode == "نام کاربری دلخواه + عدد رندوم") {
         $random_number = rand(1000000, 9999999);
         return $text . "_" . $random_number;
     } elseif ($Metode == "متن دلخواه + عدد رندوم") {
@@ -246,6 +257,10 @@ function generateUsername($from_id, $Metode, $username, $randomString, $text, $n
         }
         return $usernamecustom . "_" . $user['number_username'];
     }
+    
+    // FIX: Added default return value for unknown methods
+    error_log("Unknown username generation method: " . $Metode);
+    return $from_id . "_" . $randomString;
 }
 function outputlunk($text)
 {
@@ -259,19 +274,19 @@ function outputlunk($text)
     $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
     curl_setopt($ch, CURLOPT_USERAGENT, $userAgent);
     $response = curl_exec($ch);
-    if ($response === false) {
-        $error = curl_error($ch);
-        return null;
-    } else {
-        return $response;
-    }
-
+    $error = curl_error($ch);
     curl_close($ch);
+    
+    if ($response === false) {
+        error_log("outputlunk error: " . $error);
+        return null;
+    }
+    return $response;
 }
 function outputlunksub($url)
 {
     $ch = curl_init();
-    var_dump($url);
+    // REMOVED DEBUG: var_dump($url); - This breaks webhook responses!
     curl_setopt($ch, CURLOPT_URL, "$url/info");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
@@ -280,17 +295,16 @@ function outputlunksub($url)
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 
-
     $headers = array();
     $headers[] = 'Accept: application/json';
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
     $result = curl_exec($ch);
     if (curl_errno($ch)) {
-        echo 'Error:' . curl_error($ch);
+        error_log('outputlunksub error: ' . curl_error($ch));
     }
-    return $result;
     curl_close($ch);
+    return $result;
 }
 function DirectPayment($order_id, $image = 'images.jpg')
 {
@@ -311,10 +325,19 @@ function DirectPayment($order_id, $image = 'images.jpg')
     update("user", "Processing_value_tow", "0", "id", $Balance_id['id']);
     update("user", "Processing_value_four", "0", "id", $Balance_id['id']);
     if ($steppay[0] == "getconfigafterpay") {
-        $stmt = $pdo->prepare("SELECT * FROM invoice WHERE username = '{$steppay[1]}' AND Status = 'unpaid' LIMIT 1");
+        $stmt = $pdo->prepare("SELECT * FROM invoice WHERE username = :username AND Status = 'unpaid' LIMIT 1");
+        $stmt->bindParam(':username', $steppay[1], PDO::PARAM_STR);
         $stmt->execute();
         $get_invoice = $stmt->fetch(PDO::FETCH_ASSOC);
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE name_product = '{$get_invoice['name_product']}' AND (Location = '{$get_invoice['Service_location']}'  or Location = '/all')");
+        
+        if (!$get_invoice) {
+            error_log("Invoice not found for username: " . $steppay[1]);
+            return;
+        }
+        
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE name_product = :name_product AND (Location = :location OR Location = '/all')");
+        $stmt->bindParam(':name_product', $get_invoice['name_product'], PDO::PARAM_STR);
+        $stmt->bindParam(':location', $get_invoice['Service_location'], PDO::PARAM_STR);
         $stmt->execute();
         $info_product = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($get_invoice['name_product'] == "🛍 حجم دلخواه" || $get_invoice['name_product'] == "⚙️ سرویس دلخواه") {
@@ -325,7 +348,9 @@ function DirectPayment($order_id, $image = 'images.jpg')
             $info_product['Service_time'] = $get_invoice['Service_time'];
             $info_product['price_product'] = $get_invoice['price_product'];
         } else {
-            $stmt = $pdo->prepare("SELECT * FROM product WHERE name_product = '{$get_invoice['name_product']}' AND (Location = '{$get_invoice['Service_location']}'  or Location = '/all')");
+            $stmt = $pdo->prepare("SELECT * FROM product WHERE name_product = :name_product AND (Location = :location OR Location = '/all')");
+            $stmt->bindParam(':name_product', $get_invoice['name_product'], PDO::PARAM_STR);
+            $stmt->bindParam(':location', $get_invoice['Service_location'], PDO::PARAM_STR);
             $stmt->execute();
             $info_product = $stmt->fetch(PDO::FETCH_ASSOC);
         }
@@ -502,6 +527,13 @@ function DirectPayment($order_id, $image = 'images.jpg')
         $balanceformatsell = number_format($balanceformatsell, 0);
         $balancebefore = number_format($Balance_id['Balance'], 0);
         $timejalali = jdate('Y/m/d H:i:s');
+        // Check if $countinvoice is defined, if not query it
+        if (!isset($countinvoice)) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM invoice WHERE name_product != 'سرویس تست' AND id_user = :id_user AND Status != 'Unpaid'");
+            $stmt->bindParam(':id_user', $Balance_id['id']);
+            $stmt->execute();
+            $countinvoice = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
+        }
         $textonebuy = "";
         if ($countinvoice == 1) {
             $textonebuy = "📌 خرید اول کاربر";
@@ -589,7 +621,10 @@ $textonebuy
             $prodcut['Service_time'] = $service_other['Service_time'];
             $prodcut['Volume_constraint'] = $service_other['volumebuy'];
         } else {
-            $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = '{$nameloc['Service_location']}' OR Location = '/all') AND agent= '{$Balance_id['agent']}' AND code_product = '$codeproduct'");
+            $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :location OR Location = '/all') AND agent = :agent AND code_product = :code_product");
+            $stmt->bindParam(':location', $nameloc['Service_location'], PDO::PARAM_STR);
+            $stmt->bindParam(':agent', $Balance_id['agent'], PDO::PARAM_STR);
+            $stmt->bindParam(':code_product', $codeproduct, PDO::PARAM_STR);
             $stmt->execute();
             $prodcut = $stmt->fetch(PDO::FETCH_ASSOC);
         }
@@ -658,7 +693,9 @@ $textonebuy
         if ($Balance_id['agent'] == "f") {
             $valurcashbackextend = select("shopSetting", "*", "Namevalue", "chashbackextend", "select")['value'];
         } else {
-            $valurcashbackextend = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent", "select")['value'], true)[$Balance_id['agenr']];
+            // FIX TYPO: 'agenr' should be 'agent'
+            $cashback_data = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent", "select")['value'], true);
+            $valurcashbackextend = isset($cashback_data[$Balance_id['agent']]) ? $cashback_data[$Balance_id['agent']] : 0;
         }
         if (intval($valurcashbackextend) != 0) {
             $result = ($prodcut['price_product'] * $valurcashbackextend) / 100;

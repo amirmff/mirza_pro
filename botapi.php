@@ -12,20 +12,21 @@ function telegram($method, $datas = [],$token = null)
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5); 
     curl_setopt($ch, CURLOPT_POSTFIELDS, $datas);
     $res = curl_exec($ch);
-    $res = json_decode($res,true);
-    if(!$res['ok']){
-        if(json_encode($res) != null)error_log(json_encode($res));
+    $error = curl_error($ch);
+    curl_close($ch);
+    
+    if ($error) {
+        error_log("Telegram API cURL error: " . $error);
+        return ['ok' => false, 'error' => $error];
     }
-    if (curl_error($ch)) {
-        return curl_error($ch);
-    } else {
-        return $res;
+    
+    $res = json_decode($res, true);
+    if (!$res || !isset($res['ok']) || !$res['ok']) {
+        if($res) error_log("Telegram API error: " . json_encode($res));
     }
+    return $res ?: ['ok' => false, 'error' => 'Invalid response'];
 }
-error_log(json_encode(telegram('verifyUser',[
-    'user_id' => 1789174391,
-    'custom_description' => "تایید شده توسط fbi"
-])));
+// REMOVED DEBUG CODE - Was calling verifyUser on every request!
 function sendmessage($chat_id,$text,$keyboard,$parse_mode,$bot_token = null){
     if(intval($chat_id) == 0)return ['ok' => false];
     return telegram('sendmessage',[
