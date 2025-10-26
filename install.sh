@@ -366,6 +366,15 @@ install_php() {
 }
 
 install_mysql() {
+    # Check if MySQL password already exists from previous install
+    if [ -f /root/.mysql_root_password ]; then
+        print_info "MySQL already configured from previous install"
+        MYSQL_ROOT_PASSWORD=$(cat /root/.mysql_root_password)
+        print_success "Using existing MySQL credentials"
+        update_progress
+        return 0
+    fi
+    
     # Generate random MySQL root password
     print_info "Generating secure MySQL password"
     MYSQL_ROOT_PASSWORD=$(openssl rand -base64 32)
@@ -379,15 +388,24 @@ install_mysql() {
     systemctl start mysql || true
     sleep 3
     
-    # Secure MySQL installation (use sudo to authenticate)
+    # Secure MySQL installation
     print_info "Securing MySQL installation"
-    sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';" 2>&1 | grep -v "Warning" || true
-    sudo mysql -e "DELETE FROM mysql.user WHERE User='';" 2>&1 | grep -v "Warning" || true
-    sudo mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>&1 | grep -v "Warning" || true
-    sudo mysql -e "DROP DATABASE IF EXISTS test;" 2>&1 | grep -v "Warning" || true
-    sudo mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>&1 | grep -v "Warning" || true
-    sudo mysql -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Warning" || true
-    print_success "MySQL secured"
+    
+    # Check if we can connect with sudo (fresh install)
+    if sudo mysql -e "SELECT 1;" > /dev/null 2>&1; then
+        print_info "Configuring fresh MySQL installation"
+        sudo mysql <<EOF 2>/dev/null || true
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';
+DELETE FROM mysql.user WHERE User='';
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test_%';
+FLUSH PRIVILEGES;
+EOF
+        print_success "MySQL secured"
+    else
+        print_info "MySQL already has authentication configured"
+    fi
     
     systemctl enable mysql > /dev/null 2>&1
     update_progress
@@ -406,15 +424,55 @@ install_composer() {
 setup_database() {
     print_info "Setting up application database"
     
+    # Check if database already exists
+    if [ -f /root/.mirza_db_credentials ]; then
+        print_info "Database already configured from previous install"
+        source /root/.mirza_db_credentials
+        print_success "Using existing database credentials"
+        update_progress
+        return 0
+    fi
+    
     # Generate database credentials
     DB_NAME="mirza_pro"
     DB_USER="mirza_user"
     DB_PASSWORD=$(openssl rand -base64 24)
-    MYSQL_ROOT_PASSWORD=$(cat /root/.mysql_root_password)
+    MYSQL_ROOT_PASSWORD=$(cat /root/.mysql_root_password 2>/dev/null || echo "")
     
-    # Create database and user
-    run_with_spinner "Creating database and user" \
-        "mysql -uroot -p${MYSQL_ROOT_PASSWORD} -e \"CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}'; GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost'; FLUSH PRIVILEGES;\""
+    print_info "Creating database and user"
+    
+    # Try with password first, then sudo
+    if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+        if mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT 1;" > /dev/null 2>&1; then
+            mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<EOF 2>&1 | grep -v "Warning" || true
+CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+            print_success "Database created with password auth"
+        else
+            # Try with sudo
+            sudo mysql <<EOF 2>&1 | grep -v "Warning" || true
+CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+            print_success "Database created with sudo auth"
+        fi
+    else
+        # No password file, try sudo
+        sudo mysql <<EOF 2>&1 | grep -v "Warning" || true
+CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+        print_success "Database created with sudo auth"
+    fi
+    
+    update_progress
     
     # Save credentials
     cat > /root/.mirza_db_credentials <<EOF
