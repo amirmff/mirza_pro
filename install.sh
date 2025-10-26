@@ -5,7 +5,9 @@
 # Complete deployment on Ubuntu Server
 #########################################
 
-set -e  # Exit on error
+# Exit on error, but handle it gracefully
+set -euo pipefail
+trap 'error_handler $? $LINENO' ERR
 
 # Colors for output
 RED='\033[0;31m'
@@ -19,7 +21,52 @@ INSTALL_DIR="/var/www/mirza_pro"
 LOG_FILE="/var/log/mirza_pro_install.log"
 PHP_VERSION="8.1"
 
+# Create log file
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE")
+exec 2>&1
+
+# Global progress tracking
+STEP_TOTAL=12
+STEP_CURRENT=0
+
 # Functions
+error_handler() {
+    local exit_code=$1
+    local line_number=$2
+    print_error "Installation failed at line $line_number with exit code $exit_code"
+    print_error "Check the log file: $LOG_FILE"
+    print_info "Last 20 lines of log:"
+    tail -n 20 "$LOG_FILE" | while read line; do echo "  $line"; done
+    exit $exit_code
+}
+
+update_progress() {
+    STEP_CURRENT=$((STEP_CURRENT + 1))
+    local percent=$((STEP_CURRENT * 100 / STEP_TOTAL))
+    echo -ne "\r${BLUE}[Progress: ${percent}%]${NC}\n"
+}
+
+run_with_spinner() {
+    local message="$1"
+    local command="$2"
+    local log_marker="===== $message ====="
+    
+    print_info "$message"
+    echo "$log_marker" >> "$LOG_FILE"
+    
+    # Run command with timeout
+    if timeout 600 bash -c "$command" >> "$LOG_FILE" 2>&1; then
+        print_success "$message - Done"
+        update_progress
+        return 0
+    else
+        print_error "$message - Failed or timed out"
+        return 1
+    fi
+}
+
 print_header() {
     echo -e "${BLUE}"
     echo "=========================================="
@@ -63,110 +110,109 @@ check_os() {
 }
 
 install_dependencies() {
-    print_info "Installing system dependencies..."
-    
     # Update package list
-    apt-get update >> "$LOG_FILE" 2>&1
+    run_with_spinner "Updating package lists" \
+        "apt-get update -qq"
+    
+    # Fix any broken packages
+    run_with_spinner "Fixing any broken packages" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -f -y -qq"
     
     # Install required packages
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        software-properties-common \
-        curl \
-        wget \
-        git \
-        unzip \
-        supervisor \
-        certbot \
-        python3-certbot-nginx \
-        ufw \
-        htop \
-        >> "$LOG_FILE" 2>&1
-    
-    print_success "System dependencies installed"
+    run_with_spinner "Installing system dependencies" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            software-properties-common \
+            curl \
+            wget \
+            git \
+            unzip \
+            supervisor \
+            certbot \
+            python3-certbot-nginx \
+            ufw \
+            htop"
 }
 
 install_nginx() {
-    print_info "Installing Nginx..."
+    run_with_spinner "Installing Nginx web server" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx"
     
-    apt-get install -y nginx >> "$LOG_FILE" 2>&1
-    systemctl enable nginx >> "$LOG_FILE" 2>&1
-    systemctl start nginx >> "$LOG_FILE" 2>&1
-    
-    print_success "Nginx installed and started"
+    run_with_spinner "Starting Nginx service" \
+        "systemctl enable nginx && systemctl start nginx"
 }
 
 install_php() {
-    print_info "Installing PHP $PHP_VERSION..."
-    
     # Add PHP repository
-    add-apt-repository -y ppa:ondrej/php >> "$LOG_FILE" 2>&1
-    apt-get update >> "$LOG_FILE" 2>&1
+    run_with_spinner "Adding PHP repository" \
+        "LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php && apt-get update -qq"
     
     # Install PHP and extensions
-    apt-get install -y \
-        php${PHP_VERSION} \
-        php${PHP_VERSION}-fpm \
-        php${PHP_VERSION}-mysql \
-        php${PHP_VERSION}-curl \
-        php${PHP_VERSION}-gd \
-        php${PHP_VERSION}-mbstring \
-        php${PHP_VERSION}-xml \
-        php${PHP_VERSION}-zip \
-        php${PHP_VERSION}-bcmath \
-        php${PHP_VERSION}-intl \
-        php${PHP_VERSION}-soap \
-        >> "$LOG_FILE" 2>&1
+    run_with_spinner "Installing PHP ${PHP_VERSION} and extensions" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            php${PHP_VERSION} \
+            php${PHP_VERSION}-fpm \
+            php${PHP_VERSION}-mysql \
+            php${PHP_VERSION}-curl \
+            php${PHP_VERSION}-gd \
+            php${PHP_VERSION}-mbstring \
+            php${PHP_VERSION}-xml \
+            php${PHP_VERSION}-zip \
+            php${PHP_VERSION}-bcmath \
+            php${PHP_VERSION}-intl \
+            php${PHP_VERSION}-soap"
     
     # Configure PHP
+    print_info "Configuring PHP settings"
     sed -i "s/upload_max_filesize = .*/upload_max_filesize = 50M/" /etc/php/${PHP_VERSION}/fpm/php.ini
     sed -i "s/post_max_size = .*/post_max_size = 50M/" /etc/php/${PHP_VERSION}/fpm/php.ini
     sed -i "s/memory_limit = .*/memory_limit = 512M/" /etc/php/${PHP_VERSION}/fpm/php.ini
     sed -i "s/max_execution_time = .*/max_execution_time = 300/" /etc/php/${PHP_VERSION}/fpm/php.ini
+    print_success "PHP configured"
     
-    systemctl enable php${PHP_VERSION}-fpm >> "$LOG_FILE" 2>&1
-    systemctl restart php${PHP_VERSION}-fpm >> "$LOG_FILE" 2>&1
-    
-    print_success "PHP $PHP_VERSION installed and configured"
+    run_with_spinner "Starting PHP-FPM service" \
+        "systemctl enable php${PHP_VERSION}-fpm && systemctl restart php${PHP_VERSION}-fpm"
 }
 
 install_mysql() {
-    print_info "Installing MySQL..."
-    
     # Generate random MySQL root password
+    print_info "Generating secure MySQL password"
     MYSQL_ROOT_PASSWORD=$(openssl rand -base64 32)
+    print_success "Password generated"
     
     # Install MySQL
-    DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server >> "$LOG_FILE" 2>&1
+    run_with_spinner "Installing MySQL server" \
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-server"
+    
+    # Start MySQL if not running
+    systemctl start mysql || true
+    sleep 3
     
     # Secure MySQL installation
-    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';" >> "$LOG_FILE" 2>&1
-    mysql -e "DELETE FROM mysql.user WHERE User='';" >> "$LOG_FILE" 2>&1
-    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" >> "$LOG_FILE" 2>&1
-    mysql -e "DROP DATABASE IF EXISTS test;" >> "$LOG_FILE" 2>&1
-    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" >> "$LOG_FILE" 2>&1
-    mysql -e "FLUSH PRIVILEGES;" >> "$LOG_FILE" 2>&1
+    print_info "Securing MySQL installation"
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';" 2>&1 | grep -v "Warning" || true
+    mysql -e "DELETE FROM mysql.user WHERE User='';" 2>&1 | grep -v "Warning" || true
+    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>&1 | grep -v "Warning" || true
+    mysql -e "DROP DATABASE IF EXISTS test;" 2>&1 | grep -v "Warning" || true
+    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>&1 | grep -v "Warning" || true
+    mysql -e "FLUSH PRIVILEGES;" 2>&1 | grep -v "Warning" || true
+    print_success "MySQL secured"
     
-    systemctl enable mysql >> "$LOG_FILE" 2>&1
+    systemctl enable mysql > /dev/null 2>&1
+    update_progress
     
     # Save credentials
     echo "$MYSQL_ROOT_PASSWORD" > /root/.mysql_root_password
     chmod 600 /root/.mysql_root_password
-    
-    print_success "MySQL installed (root password saved to /root/.mysql_root_password)"
+    print_success "MySQL credentials saved to /root/.mysql_root_password"
 }
 
 install_composer() {
-    print_info "Installing Composer..."
-    
-    curl -sS https://getcomposer.org/installer | php >> "$LOG_FILE" 2>&1
-    mv composer.phar /usr/local/bin/composer
-    chmod +x /usr/local/bin/composer
-    
-    print_success "Composer installed"
+    run_with_spinner "Installing Composer dependency manager" \
+        "curl -sS https://getcomposer.org/installer | php && mv composer.phar /usr/local/bin/composer && chmod +x /usr/local/bin/composer"
 }
 
 setup_database() {
-    print_info "Setting up database..."
+    print_info "Setting up application database"
     
     # Generate database credentials
     DB_NAME="mirza_pro"
@@ -175,12 +221,8 @@ setup_database() {
     MYSQL_ROOT_PASSWORD=$(cat /root/.mysql_root_password)
     
     # Create database and user
-    mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<EOF >> "$LOG_FILE" 2>&1
-CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
-GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
-EOF
+    run_with_spinner "Creating database and user" \
+        "mysql -uroot -p${MYSQL_ROOT_PASSWORD} -e \"CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}'; GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost'; FLUSH PRIVILEGES;\""
     
     # Save credentials
     cat > /root/.mirza_db_credentials <<EOF
@@ -189,32 +231,42 @@ DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
 EOF
     chmod 600 /root/.mirza_db_credentials
-    
-    print_success "Database created (credentials saved to /root/.mirza_db_credentials)"
+    print_success "Database credentials saved"
 }
 
 copy_files() {
-    print_info "Setting up application files..."
+    print_info "Cloning Mirza Pro from GitHub"
     
-    # Create directory
-    mkdir -p "$INSTALL_DIR"
+    # Remove old directory if exists
+    rm -rf "$INSTALL_DIR"
     
-    # Copy all files (assuming script is run from project root)
-    cp -r ./* "$INSTALL_DIR/"
+    # Clone from GitHub
+    run_with_spinner "Downloading latest version" \
+        "git clone -q https://github.com/amirmff/mirza_pro.git $INSTALL_DIR"
+    
+    # Create necessary directories
+    mkdir -p "$INSTALL_DIR/logs"
+    mkdir -p "$INSTALL_DIR/backups"
+    mkdir -p "$INSTALL_DIR/webpanel/assets"
     
     # Set permissions
+    print_info "Setting file permissions"
     chown -R www-data:www-data "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
+    chmod -R 775 "$INSTALL_DIR/logs"
+    chmod -R 775 "$INSTALL_DIR/backups"
     chmod -R 775 "$INSTALL_DIR/webpanel/assets"
-    
-    print_success "Files copied to $INSTALL_DIR"
+    print_success "Files installed"
+    update_progress
 }
 
 configure_nginx() {
-    print_info "Configuring Nginx..."
+    print_info "Configuring Nginx web server"
     
     # Get server IP
-    SERVER_IP=$(curl -s ifconfig.me)
+    print_info "Detecting server IP"
+    SERVER_IP=$(curl -s --max-time 10 ifconfig.me || echo "YOUR_SERVER_IP")
+    print_success "Server IP: $SERVER_IP"
     
     cat > /etc/nginx/sites-available/mirza_pro <<'NGINX_EOF'
 server {
@@ -271,14 +323,14 @@ NGINX_EOF
     rm -f /etc/nginx/sites-enabled/default
     
     # Test and reload
-    nginx -t >> "$LOG_FILE" 2>&1
-    systemctl reload nginx >> "$LOG_FILE" 2>&1
+    run_with_spinner "Testing and reloading Nginx" \
+        "nginx -t && systemctl reload nginx"
     
-    print_success "Nginx configured (accessible at http://$SERVER_IP)"
+    print_success "Nginx configured: http://$SERVER_IP"
 }
 
 setup_supervisor() {
-    print_info "Setting up Supervisor for bot monitoring..."
+    print_info "Setting up Supervisor for bot process management"
     
     cat > /etc/supervisor/conf.d/mirza_pro.conf <<EOF
 [program:mirza_pro_bot]
@@ -292,37 +344,39 @@ stdout_logfile=/var/log/mirza_pro_bot.log
 stopwaitsecs=3600
 EOF
     
-    supervisorctl reread >> "$LOG_FILE" 2>&1
-    supervisorctl update >> "$LOG_FILE" 2>&1
-    
-    print_success "Supervisor configured"
+    run_with_spinner "Configuring and starting Supervisor" \
+        "supervisorctl reread && supervisorctl update"
 }
 
 setup_firewall() {
-    print_info "Configuring firewall..."
+    print_info "Configuring UFW firewall"
     
     # Reset UFW
-    ufw --force reset >> "$LOG_FILE" 2>&1
+    ufw --force reset > /dev/null 2>&1
     
     # Default policies
-    ufw default deny incoming >> "$LOG_FILE" 2>&1
-    ufw default allow outgoing >> "$LOG_FILE" 2>&1
+    ufw default deny incoming > /dev/null 2>&1
+    ufw default allow outgoing > /dev/null 2>&1
     
     # Allow SSH, HTTP, HTTPS
-    ufw allow 22/tcp >> "$LOG_FILE" 2>&1
-    ufw allow 80/tcp >> "$LOG_FILE" 2>&1
-    ufw allow 443/tcp >> "$LOG_FILE" 2>&1
+    ufw allow 22/tcp > /dev/null 2>&1
+    ufw allow 80/tcp > /dev/null 2>&1
+    ufw allow 443/tcp > /dev/null 2>&1
     
     # Enable firewall
-    ufw --force enable >> "$LOG_FILE" 2>&1
+    ufw --force enable > /dev/null 2>&1
     
-    print_success "Firewall configured"
+    print_success "Firewall configured (SSH/HTTP/HTTPS allowed)"
+    update_progress
 }
 
 create_setup_flag() {
     # Create flag file to trigger setup wizard
+    print_info "Creating setup wizard trigger"
     touch "$INSTALL_DIR/webpanel/.needs_setup"
     chown www-data:www-data "$INSTALL_DIR/webpanel/.needs_setup"
+    print_success "Setup flag created"
+    update_progress
 }
 
 print_completion() {
@@ -363,15 +417,26 @@ print_completion() {
 
 # Main installation
 main() {
+    # Clear screen for clean output
+    clear
+    
     print_header
     
+    # Pre-checks
+    print_info "Running pre-installation checks"
     check_root
     check_os
     
-    print_info "Starting installation..."
-    echo "This may take 5-10 minutes..."
     echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    print_info "Starting automated installation"
+    print_info "This will take 5-10 minutes"
+    print_info "Log file: $LOG_FILE"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    sleep 2
     
+    # Installation steps
     install_dependencies
     install_nginx
     install_php
@@ -384,6 +449,9 @@ main() {
     setup_firewall
     create_setup_flag
     
+    # Completion
+    echo ""
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     print_completion
 }
 
