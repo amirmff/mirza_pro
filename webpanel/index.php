@@ -179,24 +179,30 @@ $admin = $auth->getCurrentAdmin();
         });
         
         function loadRecentActivity() {
-            // Simulated activity data - you can replace with actual API call
-            const activities = [
-                { icon: '👤', text: 'کاربر جدید ثبت نام کرد', time: '5 دقیقه پیش', type: 'success' },
-                { icon: '💰', text: 'پرداخت 50,000 تومان انجام شد', time: '10 دقیقه پیش', type: 'success' },
-                { icon: '📋', text: 'سرویس جدید ایجاد شد', time: '15 دقیقه پیش', type: 'info' },
-                { icon: '⚠️', text: 'سرویس منقضی شد', time: '20 دقیقه پیش', type: 'warning' }
-            ];
-            
-            const container = document.getElementById('activityList');
-            container.innerHTML = activities.map(activity => `
-                <div class="activity-item ${activity.type}">
-                    <span class="activity-icon">${activity.icon}</span>
-                    <div class="activity-info">
-                        <p>${activity.text}</p>
-                        <small>${activity.time}</small>
-                    </div>
-                </div>
-            `).join('');
+            fetch('/webpanel/api/recent_activity.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const container = document.getElementById('activityList');
+                        if (data.activities.length === 0) {
+                            container.innerHTML = '<div class="activity-item"><p>فعالیت اخیری وجود ندارد</p></div>';
+                            return;
+                        }
+                        container.innerHTML = data.activities.map(activity => `
+                            <div class="activity-item ${activity.type}">
+                                <span class="activity-icon">${activity.icon}</span>
+                                <div class="activity-info">
+                                    <p>${activity.text}</p>
+                                    <small>${activity.time}</small>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading activities:', error);
+                    document.getElementById('activityList').innerHTML = '<div class="activity-item"><p>خطا در بارگذاری فعالیت‌ها</p></div>';
+                });
         }
     </script>
 </body>
