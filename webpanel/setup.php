@@ -103,6 +103,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
             }
             
+            // Run table.php to create telegram bot tables
+            $table_file = __DIR__ . '/../table.php';
+            if (file_exists($table_file)) {
+                ob_start();
+                require_once $table_file;
+                ob_end_clean();
+            }
+            
             // Create admin user
             $hashed_password = password_hash($_SESSION['admin_password'], PASSWORD_BCRYPT);
             $stmt = $pdo->prepare("INSERT INTO admin (id_admin, username_admin, password_admin, rule) VALUES (:id, :username, :password, 'administrator') ON DUPLICATE KEY UPDATE password_admin = :password");
