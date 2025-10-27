@@ -1,15 +1,22 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
+
 $admin = $auth->getCurrentAdmin();
-$api = new API();
 
-require_once __DIR__ . '/../config.php';
+// Fetch all panels from bot's marzban_panel table
+$panels = getAllPanels();
 
-$panels_result = $api->getPanels();
+// Get stats for each panel
+foreach ($panels as &$panel) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM invoice WHERE Service_location = ?");
+    $stmt->execute([$panel['name_panel']]);
+    $panel['services_count'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
+}
 $panels = $panels_result['panels'] ?? [];
 ?>
 <!DOCTYPE html>

@@ -1,15 +1,22 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
-$admin = $auth->getCurrentAdmin();
-$api = new API();
 
-$products_result = $api->getProducts();
-$products = $products_result['products'] ?? [];
-?>
+$admin = $auth->getCurrentAdmin();
+
+// Fetch all products from bot's product table
+$products = getAllProducts();
+
+// Get sales count for each product
+foreach ($products as &$product) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM invoice WHERE name_product = ?");
+    $stmt->execute([$product['name_product']]);
+    $product['sold_count'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
+}
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
