@@ -294,4 +294,265 @@ class API {
         
         return ['success' => false, 'error' => 'خطا در ارسال پیام'];
     }
+    
+    // Invoice Management
+    public function getInvoiceDetails($invoice_id) {
+        $stmt = $this->pdo->prepare("SELECT i.*, u.username, u.number FROM invoice i LEFT JOIN user u ON i.id_user = u.id WHERE i.id_invoice = :id");
+        $stmt->bindParam(':id', $invoice_id, PDO::PARAM_INT);
+        $stmt->execute();
+        $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$invoice) {
+            return ['success' => false, 'error' => 'فاکتور یافت نشد'];
+        }
+        
+        return ['success' => true, 'invoice' => $invoice];
+    }
+    
+    public function updateInvoice($invoice_id, $data) {
+        $allowed = ['Status', 'date_off', 'volume_GB', 'Day', 'Location'];
+        $updates = [];
+        $params = [':id' => $invoice_id];
+        
+        foreach ($data as $key => $value) {
+            if (in_array($key, $allowed)) {
+                $updates[] = "$key = :$key";
+                $params[":$key"] = $value;
+            }
+        }
+        
+        if (empty($updates)) {
+            return ['success' => false, 'error' => 'هیچ فیلدی برای بروزرسانی یافت نشد'];
+        }
+        
+        $sql = "UPDATE invoice SET " . implode(', ', $updates) . " WHERE id_invoice = :id";
+        $stmt = $this->pdo->prepare($sql);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'سرویس با موفقیت بروزرسانی شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در بروزرسانی سرویس'];
+    }
+    
+    // Payment Management
+    public function getPaymentDetails($payment_id) {
+        $stmt = $this->pdo->prepare("SELECT p.*, u.username, u.number FROM Payment_report p LEFT JOIN user u ON p.id_user = u.id WHERE p.id_payment = :id");
+        $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
+        $stmt->execute();
+        $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$payment) {
+            return ['success' => false, 'error' => 'پرداخت یافت نشد'];
+        }
+        
+        return ['success' => true, 'payment' => $payment];
+    }
+    
+    public function approvePayment($payment_id, $notes = '') {
+        try {
+            $this->pdo->beginTransaction();
+            
+            // Update payment status
+            $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'paid' WHERE id_payment = :id");
+            $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            // Get payment details
+            $stmt = $this->pdo->prepare("SELECT id_user, price FROM Payment_report WHERE id_payment = :id");
+            $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
+            $stmt->execute();
+            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Update user balance
+            $stmt = $this->pdo->prepare("UPDATE user SET Balance = Balance + :amount WHERE id = :id");
+            $stmt->bindParam(':amount', $payment['price'], PDO::PARAM_INT);
+            $stmt->bindParam(':id', $payment['id_user'], PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $this->pdo->commit();
+            
+            // Send notification to user
+            $this->sendMessageToUser($payment['id_user'], "✅ پرداخت شما تایید شد\nمبلغ: " . number_format($payment['price']) . " تومان");
+            
+            return ['success' => true, 'message' => 'پرداخت تایید و موجودی افزایش یافت'];
+        } catch (Exception $e) {
+            $this->pdo->rollBack();
+            return ['success' => false, 'error' => 'خطا در تایید پرداخت: ' . $e->getMessage()];
+        }
+    }
+    
+    public function rejectPayment($payment_id, $reason = '') {
+        $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'rejected' WHERE id_payment = :id");
+        $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
+        
+        if ($stmt->execute()) {
+            // Get user ID and send notification
+            $stmt = $this->pdo->prepare("SELECT id_user FROM Payment_report WHERE id_payment = :id");
+            $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
+            $stmt->execute();
+            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            $msg = "❌ پرداخت شما رد شد";
+            if ($reason) {
+                $msg .= "\nدلیل: " . $reason;
+            }
+            $this->sendMessageToUser($payment['id_user'], $msg);
+            
+            return ['success' => true, 'message' => 'پرداخت رد شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در رد پرداخت'];
+    }
+    
+    // Panel Management  
+    public function addPanel($data) {
+        $required = ['name_panel', 'url_panel', 'username_panel', 'password_panel', 'type_panel'];
+        foreach ($required as $field) {
+            if (empty($data[$field])) {
+                return ['success' => false, 'error' => "فیلد $field الزامی است"];
+            }
+        }
+        
+        $stmt = $this->pdo->prepare("INSERT INTO marzban_panel (name_panel, url_panel, username_panel, password_panel, type_panel) VALUES (:name, :url, :username, :password, :type)");
+        $stmt->bindParam(':name', $data['name_panel']);
+        $stmt->bindParam(':url', $data['url_panel']);
+        $stmt->bindParam(':username', $data['username_panel']);
+        $stmt->bindParam(':password', $data['password_panel']);
+        $stmt->bindParam(':type', $data['type_panel']);
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'پنل با موفقیت اضافه شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در افزودن پنل'];
+    }
+    
+    public function updatePanel($panel_name, $data) {
+        $allowed = ['url_panel', 'username_panel', 'password_panel', 'type_panel'];
+        $updates = [];
+        $params = [':name' => $panel_name];
+        
+        foreach ($data as $key => $value) {
+            if (in_array($key, $allowed)) {
+                $updates[] = "$key = :$key";
+                $params[":$key"] = $value;
+            }
+        }
+        
+        if (empty($updates)) {
+            return ['success' => false, 'error' => 'هیچ فیلدی برای بروزرسانی یافت نشد'];
+        }
+        
+        $sql = "UPDATE marzban_panel SET " . implode(', ', $updates) . " WHERE name_panel = :name";
+        $stmt = $this->pdo->prepare($sql);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'پنل با موفقیت بروزرسانی شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در بروزرسانی پنل'];
+    }
+    
+    public function deletePanel($panel_name) {
+        $stmt = $this->pdo->prepare("DELETE FROM marzban_panel WHERE name_panel = :name");
+        $stmt->bindParam(':name', $panel_name);
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'پنل با موفقیت حذف شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در حذف پنل'];
+    }
+    
+    // Product Management
+    public function addProduct($data) {
+        $required = ['name_product', 'price_product', 'Location'];
+        foreach ($required as $field) {
+            if (!isset($data[$field])) {
+                return ['success' => false, 'error' => "فیلد $field الزامی است"];
+            }
+        }
+        
+        $stmt = $this->pdo->prepare("INSERT INTO product (name_product, price_product, Location, Day, volume_GB, status) VALUES (:name, :price, :location, :day, :volume, :status)");
+        $stmt->bindParam(':name', $data['name_product']);
+        $stmt->bindParam(':price', $data['price_product']);
+        $stmt->bindParam(':location', $data['Location']);
+        $stmt->bindParam(':day', $data['Day'] ?? null);
+        $stmt->bindParam(':volume', $data['volume_GB'] ?? null);
+        $stmt->bindParam(':status', $data['status'] ?? 'active');
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'محصول با موفقیت اضافه شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در افزودن محصول'];
+    }
+    
+    public function updateProduct($product_id, $data) {
+        $allowed = ['name_product', 'price_product', 'Location', 'Day', 'volume_GB', 'status'];
+        $updates = [];
+        $params = [':id' => $product_id];
+        
+        foreach ($data as $key => $value) {
+            if (in_array($key, $allowed)) {
+                $updates[] = "$key = :$key";
+                $params[":$key"] = $value;
+            }
+        }
+        
+        if (empty($updates)) {
+            return ['success' => false, 'error' => 'هیچ فیلدی برای بروزرسانی یافت نشد'];
+        }
+        
+        $sql = "UPDATE product SET " . implode(', ', $updates) . " WHERE id_product = :id";
+        $stmt = $this->pdo->prepare($sql);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'محصول با موفقیت بروزرسانی شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در بروزرسانی محصول'];
+    }
+    
+    public function deleteProduct($product_id) {
+        $stmt = $this->pdo->prepare("DELETE FROM product WHERE id_product = :id");
+        $stmt->bindParam(':id', $product_id, PDO::PARAM_INT);
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'محصول با موفقیت حذف شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در حذف محصول'];
+    }
+    
+    // Bot Control
+    public function getBotStatus() {
+        $stmt = $this->pdo->query("SELECT Bot_Status FROM setting LIMIT 1");
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        return ['success' => true, 'status' => $result['Bot_Status'] ?? 'unknown'];
+    }
+    
+    public function setBotStatus($status) {
+        $stmt = $this->pdo->prepare("UPDATE setting SET Bot_Status = :status");
+        $stmt->bindParam(':status', $status);
+        
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'وضعیت ربات بروزرسانی شد'];
+        }
+        
+        return ['success' => false, 'error' => 'خطا در بروزرسانی وضعیت ربات'];
+    }
 }
