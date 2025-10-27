@@ -1,24 +1,32 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
 $admin = $auth->getCurrentAdmin();
 
-require_once __DIR__ . '/../config.php';
-
-// Handle payment approval/rejection
+// Handle payment approval/rejection using bot_core functions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $payment_id = $_POST['payment_id'] ?? 0;
     $action = $_POST['action'];
+    $note = $_POST['note'] ?? '';
     
     if ($action === 'approve') {
-        $pdo->prepare("UPDATE Payment_report SET payment_Status = 'paid' WHERE id_payment = ?")->execute([$payment_id]);
-        $message = 'پرداخت با موفقیت تایید شد';
+        // Use bot's approvePayment function which handles balance update and notifications
+        if (approvePayment($payment_id, "Approved by admin: {$admin['username']}")) {
+            $message = 'پرداخت با موفقیت تایید شد';
+        } else {
+            $message = 'خطا در تایید پرداخت';
+        }
     } elseif ($action === 'reject') {
-        $pdo->prepare("UPDATE Payment_report SET payment_Status = 'rejected' WHERE id_payment = ?")->execute([$payment_id]);
-        $message = 'پرداخت رد شد';
+        // Use bot's rejectPayment function which sends notification to user
+        $reason = $_POST['reason'] ?? 'رد شده توسط ادمین';
+        if (rejectPayment($payment_id, $reason)) {
+            $message = 'پرداخت رد شد';
+        } else {
+            $message = 'خطا در رد پرداخت';
+        }
     }
 }
 

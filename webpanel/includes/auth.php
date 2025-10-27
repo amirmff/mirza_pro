@@ -11,14 +11,16 @@ class Auth {
     }
     
     public function login($username, $password) {
-        $stmt = $this->pdo->prepare("SELECT * FROM admin WHERE username_admin = :username LIMIT 1");
+        // Bot's admin table uses: id_admin, username, password, rule
+        $stmt = $this->pdo->prepare("SELECT * FROM admin WHERE username = :username LIMIT 1");
         $stmt->bindParam(':username', $username, PDO::PARAM_STR);
         $stmt->execute();
         $admin = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if ($admin && password_verify($password, $admin['password_admin'])) {
+        // Bot uses plain text passwords (as seen in table.php)
+        if ($admin && $admin['password'] === $password) {
             $_SESSION['admin_id'] = $admin['id_admin'];
-            $_SESSION['admin_username'] = $admin['username_admin'];
+            $_SESSION['admin_username'] = $admin['username'];
             $_SESSION['admin_rule'] = $admin['rule'];
             $_SESSION['last_activity'] = time();
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -30,7 +32,7 @@ class Auth {
                 'success' => true,
                 'admin' => [
                     'id' => $admin['id_admin'],
-                    'username' => $admin['username_admin'],
+                    'username' => $admin['username'],
                     'rule' => $admin['rule']
                 ]
             ];
@@ -106,8 +108,9 @@ class Auth {
             return null;
         }
         
-        $stmt = $this->pdo->prepare("SELECT id_admin, username_admin, rule FROM admin WHERE id_admin = :id");
-        $stmt->bindParam(':id', $_SESSION['admin_id'], PDO::PARAM_INT);
+        // Use bot's admin table structure: id_admin, username, password, rule
+        $stmt = $this->pdo->prepare("SELECT id_admin, username, rule FROM admin WHERE id_admin = :id");
+        $stmt->bindParam(':id', $_SESSION['admin_id'], PDO::PARAM_STR);
         $stmt->execute();
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
@@ -127,10 +130,10 @@ class Auth {
     }
     
     public function updatePassword($admin_id, $new_password) {
-        $hashed = password_hash($new_password, PASSWORD_BCRYPT);
-        $stmt = $this->pdo->prepare("UPDATE admin SET password_admin = :password WHERE id_admin = :id");
-        $stmt->bindParam(':password', $hashed, PDO::PARAM_STR);
-        $stmt->bindParam(':id', $admin_id, PDO::PARAM_INT);
+        // Bot uses plain text passwords in admin.password field
+        $stmt = $this->pdo->prepare("UPDATE admin SET password = :password WHERE id_admin = :id");
+        $stmt->bindParam(':password', $new_password, PDO::PARAM_STR);
+        $stmt->bindParam(':id', $admin_id, PDO::PARAM_STR);
         return $stmt->execute();
     }
 }

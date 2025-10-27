@@ -1,16 +1,30 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
 
-$api = new API();
 $admin = $auth->getCurrentAdmin();
 
-// Get users from database
-require_once __DIR__ . '/../config.php';
-$users_stmt = $pdo->query("SELECT * FROM user ORDER BY register DESC LIMIT 100");
+// Fetch users from bot's user table
+$page = $_GET['page'] ?? 1;
+$limit = 20;
+$offset = ($page - 1) * $limit;
+
+global $pdo;
+$stmt = $pdo->query("SELECT COUNT(*) as total FROM user");
+$total = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+$stmt = $pdo->prepare("SELECT * FROM user ORDER BY register DESC LIMIT ? OFFSET ?");
+$stmt->execute([$limit, $offset]);
+$users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$users_data = [
+    'users' => $users,
+    'total' => $total,
+    'pages' => ceil($total / $limit)
+];
 $users = $users_stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>

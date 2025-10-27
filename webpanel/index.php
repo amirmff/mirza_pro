@@ -1,12 +1,12 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
 
-$api = new API();
-$stats = $api->getStatistics();
+// Use bot_core functions
+$stats = getStatistics();
 $admin = $auth->getCurrentAdmin();
 ?>
 <!DOCTYPE html>
@@ -87,7 +87,7 @@ $admin = $auth->getCurrentAdmin();
                     <div class="stat-card blue">
                         <div class="stat-icon">👥</div>
                         <div class="stat-info">
-                            <h3><?php echo number_format($stats['stats']['total_users']); ?></h3>
+                            <h3><?php echo number_format($stats['total_users']); ?></h3>
                             <p>کل کاربران</p>
                         </div>
                     </div>
@@ -95,7 +95,7 @@ $admin = $auth->getCurrentAdmin();
                     <div class="stat-card green">
                         <div class="stat-icon">✅</div>
                         <div class="stat-info">
-                            <h3><?php echo number_format($stats['stats']['active_users']); ?></h3>
+                            <h3><?php echo number_format($stats['active_users']); ?></h3>
                             <p>کاربران فعال</p>
                         </div>
                     </div>
@@ -103,7 +103,7 @@ $admin = $auth->getCurrentAdmin();
                     <div class="stat-card purple">
                         <div class="stat-icon">📋</div>
                         <div class="stat-info">
-                            <h3><?php echo number_format($stats['stats']['active_services']); ?></h3>
+                            <h3><?php echo number_format($stats['active_services']); ?></h3>
                             <p>سرویس‌های فعال</p>
                         </div>
                     </div>
@@ -111,7 +111,7 @@ $admin = $auth->getCurrentAdmin();
                     <div class="stat-card orange">
                         <div class="stat-icon">💰</div>
                         <div class="stat-info">
-                            <h3><?php echo number_format($stats['stats']['total_revenue']); ?></h3>
+                            <h3><?php echo number_format($stats['total_revenue']); ?></h3>
                             <p>کل درآمد (تومان)</p>
                         </div>
                     </div>
@@ -119,7 +119,7 @@ $admin = $auth->getCurrentAdmin();
                     <div class="stat-card red">
                         <div class="stat-icon">📆</div>
                         <div class="stat-info">
-                            <h3><?php echo number_format($stats['stats']['today_revenue']); ?></h3>
+                            <h3><?php echo number_format($stats['today_revenue']); ?></h3>
                             <p>درآمد امروز (تومان)</p>
                         </div>
                     </div>
@@ -127,7 +127,7 @@ $admin = $auth->getCurrentAdmin();
                     <div class="stat-card teal">
                         <div class="stat-icon">🆕</div>
                         <div class="stat-info">
-                            <h3><?php echo number_format($stats['stats']['new_users_today']); ?></h3>
+                            <h3><?php echo number_format($stats['new_users_today']); ?></h3>
                             <p>کاربران جدید امروز</p>
                         </div>
                     </div>

@@ -1,15 +1,23 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
 
-$api = new API();
 $admin = $auth->getCurrentAdmin();
 
-// Get invoices
-require_once __DIR__ . '/../config.php';
+// Fetch invoices from bot's invoice table
+$invoices = select("invoice", "*", null, null, "fetchAll");
+
+// Get user and panel info for each invoice
+foreach ($invoices as &$invoice) {
+    $user = select("user", "username", "id", $invoice['id_user'], "select");
+    $invoice['user_telegram'] = $user['username'] ?? 'N/A';
+    
+    $panel = getPanelByName($invoice['Service_location']);
+    $invoice['panel_url'] = $panel['url_panel'] ?? 'N/A';
+}
 $page = $_GET['page'] ?? 1;
 $status_filter = $_GET['status'] ?? 'all';
 
