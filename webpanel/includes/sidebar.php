@@ -37,6 +37,10 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="icon">⚙️</span>
             <span>تنظیمات</span>
         </a>
+        <a href="/webpanel/channel_manager.php" class="nav-item <?php echo $current_page === 'channel_manager' ? 'active' : ''; ?>">
+            <span class="icon">🔗</span>
+            <span>کانال‌ها</span>
+        </a>
         <a href="/webpanel/reports.php" class="nav-item <?php echo $current_page === 'reports' ? 'active' : ''; ?>">
             <span class="icon">📈</span>
             <span>گزارشات</span>

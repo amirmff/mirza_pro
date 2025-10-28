@@ -107,6 +107,11 @@ $csrf = $auth->getCsrfToken();
                                             <button class="btn-sm success" onclick="userAction('unblock', <?php echo $user['id']; ?>)">رفع مسدودی</button>
                                         <?php endif; ?>
                                         <button class="btn-sm" onclick="quickMessage(<?php echo $user['id']; ?>, '<?php echo htmlspecialchars($user['username'] ?? ''); ?>')">پیام</button>
+                                        <?php if (($user['agent'] ?? 'f') === 'f'): ?>
+                                            <button class="btn-sm" onclick="setAgent(<?php echo $user['id']; ?>, 's')">نماینده</button>
+                                        <?php else: ?>
+                                            <button class="btn-sm" onclick="clearAgent(<?php echo $user['id']; ?>)">حذف نمایندگی</button>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
@@ -154,6 +159,16 @@ $csrf = $auth->getCsrfToken();
             params.append('csrf_token', '<?php echo $csrf; ?>');
             fetch('/webpanel/api/user_action.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params})
                 .then(r=>r.json()).then(d=>{ alert(d.success?'ارسال شد':('خطا: '+(d.message||''))); });
+        }
+        function setAgent(user_id, val){
+            const params = new URLSearchParams({action:'agent_set', user_id, agent_value: val, csrf_token:'<?php echo $csrf; ?>'});
+            fetch('/webpanel/api/user_action.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params})
+                .then(r=>r.json()).then(d=>{ alert(d.success?'ثبت شد':('خطا: '+(d.message||''))); if(d.success) location.reload(); });
+        }
+        function clearAgent(user_id){
+            const params = new URLSearchParams({action:'agent_clear', user_id, csrf_token:'<?php echo $csrf; ?>'});
+            fetch('/webpanel/api/user_action.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: params})
+                .then(r=>r.json()).then(d=>{ alert(d.success?'ثبت شد':('خطا: '+(d.message||''))); if(d.success) location.reload(); });
         }
     </script>
 </body>

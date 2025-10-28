@@ -74,6 +74,22 @@ try {
             $log('balance_add', "Added $amount to $user_id");
             echo json_encode(['success' => true, 'balance' => $new]);
             break;
+        case 'agent_set':
+            update('user', 'agent', $_POST['agent_value'] ?? 's', 'id', $user_id);
+            $log('agent_set', "Set agent for $user_id");
+            echo json_encode(['success' => true]);
+            break;
+        case 'agent_clear':
+            update('user', 'agent', 'f', 'id', $user_id);
+            $log('agent_clear', "Clear agent for $user_id");
+            echo json_encode(['success' => true]);
+            break;
+        case 'set_affiliate':
+            $ref = (int)($_POST['referrer_id'] ?? 0);
+            update('user', 'affiliates', $ref ?: null, 'id', $user_id);
+            $log('set_affiliate', "Affiliate of $user_id => $ref");
+            echo json_encode(['success' => true]);
+            break;
         default:
             echo json_encode(['success' => false, 'message' => 'Invalid action']);
     }
