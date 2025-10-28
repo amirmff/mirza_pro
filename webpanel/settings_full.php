@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/../config.php';
 
 $auth = new Auth();
 $auth->requireLogin();
@@ -134,7 +134,7 @@ $admin = $auth->getCurrentAdmin();
                             <h3>🤖 اطلاعات ربات</h3>
                             <div class="setting-group">
                                 <label class="setting-label">توکن ربات:</label>
-                                <input type="text" class="setting-input" id="bot_token" value="<?php echo htmlspecialchars(BOT_TOKEN); ?>">
+                                <input type="text" class="setting-input" id="bot_token" value="<?php echo htmlspecialchars($APIKEY ?? ''); ?>">
                             </div>
                             <div class="setting-group">
                                 <label class="setting-label">Webhook URL:</label>

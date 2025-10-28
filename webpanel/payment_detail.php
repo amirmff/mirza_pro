@@ -1,11 +1,10 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
 
-$api = new API();
 $admin = $auth->getCurrentAdmin();
 
 // Get payment ID from URL
@@ -15,12 +14,14 @@ if (!$payment_id) {
     exit;
 }
 
-// Fetch payment details
-$payment = $api->getPaymentDetails($payment_id);
+// Fetch payment details from bot DB
+$payment = getPayment($payment_id);
 if (!$payment) {
     header('Location: /webpanel/payments.php?error=not_found');
     exit;
 }
+// Attach user
+$user = select("user", "username, number", "id", $payment['id_user'], "select");
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -217,39 +218,40 @@ if (!$payment) {
                         <h3>اطلاعات پرداخت</h3>
                         <div class="detail-row">
                             <span class="detail-label">شناسه تراکنش:</span>
-                            <span class="detail-value"><?php echo htmlspecialchars($payment['transaction_id'] ?? 'N/A'); ?></span>
+                            <span class="detail-value"><?php echo htmlspecialchars($payment['id_order'] ?? 'N/A'); ?></span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">نام کاربری:</span>
-                            <span class="detail-value"><?php echo htmlspecialchars($payment['username_id']); ?></span>
+                            <span class="detail-value"><?php echo htmlspecialchars($user['username'] ?? 'N/A'); ?></span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">وضعیت:</span>
                             <span class="detail-value">
-                                <span class="status-badge status-<?php echo $payment['status']; ?>">
+                                <span class="status-badge status-<?php echo htmlspecialchars($payment['payment_Status']); ?>">
                                     <?php 
                                     $statusMap = [
                                         'completed' => 'تکمیل شده',
+                                        'paid' => 'پرداخت شده',
                                         'pending' => 'در انتظار',
                                         'rejected' => 'رد شده',
                                         'refunded' => 'بازگشت داده شده'
                                     ];
-                                    echo $statusMap[$payment['status']] ?? $payment['status'];
+                                    echo $statusMap[$payment['payment_Status']] ?? $payment['payment_Status'];
                                     ?>
                                 </span>
                             </span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">مبلغ:</span>
-                            <span class="detail-value"><?php echo number_format($payment['Price']); ?> تومان</span>
+                            <span class="detail-value"><?php echo number_format((int)($payment['price'] ?? 0)); ?> تومان</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">روش پرداخت:</span>
-                            <span class="detail-value"><?php echo htmlspecialchars($payment['method'] ?? 'کارت به کارت'); ?></span>
+                            <span class="detail-value"><?php echo htmlspecialchars($payment['Payment_Method'] ?? 'کارت به کارت'); ?></span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">تاریخ:</span>
-                            <span class="detail-value"><?php echo $payment['timestamp']; ?></span>
+                            <span class="detail-value"><?php echo htmlspecialchars($payment['time'] ?? ''); ?></span>
                         </div>
                         
                         <?php if (!empty($payment['admin_note'])): ?>
@@ -283,7 +285,7 @@ if (!$payment) {
                 <div class="detail-card" style="margin-top: 20px;">
                     <h3>عملیات</h3>
                     <div class="action-buttons">
-                        <?php if ($payment['status'] === 'pending'): ?>
+                        <?php if (($payment['payment_Status'] ?? '') === 'pending'): ?>
                         <button class="btn btn-success" onclick="approvePayment()">
                             ✅ تایید پرداخت
                         </button>
@@ -292,7 +294,7 @@ if (!$payment) {
                         </button>
                         <?php endif; ?>
                         
-                        <?php if ($payment['status'] === 'completed'): ?>
+                        <?php if (in_array(($payment['payment_Status'] ?? ''), ['paid','completed'])): ?>
                         <button class="btn btn-warning" onclick="refundPayment()">
                             💰 بازگشت وجه
                         </button>

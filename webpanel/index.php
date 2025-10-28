@@ -63,8 +63,8 @@ $admin = $auth->getCurrentAdmin();
             
             <div class="sidebar-footer">
                 <div class="admin-info">
-                    <strong><?php echo htmlspecialchars($admin['username_admin']); ?></strong>
-                    <small><?php echo htmlspecialchars($admin['rule']); ?></small>
+                    <strong><?php echo htmlspecialchars($admin['username'] ?? 'admin'); ?></strong>
+                    <small><?php echo htmlspecialchars($admin['rule'] ?? ''); ?></small>
                 </div>
                 <a href="/webpanel/logout.php" class="btn-logout">خروج</a>
             </div>

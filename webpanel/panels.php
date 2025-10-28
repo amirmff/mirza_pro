@@ -6,6 +6,7 @@ $auth = new Auth();
 $auth->requireLogin();
 
 $admin = $auth->getCurrentAdmin();
+if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
 // Fetch all panels from bot's marzban_panel table
 $panels = getAllPanels();
@@ -17,7 +18,6 @@ foreach ($panels as &$panel) {
     $stmt->execute([$panel['name_panel']]);
     $panel['services_count'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
 }
-$panels = $panels_result['panels'] ?? [];
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -57,7 +57,7 @@ $panels = $panels_result['panels'] ?? [];
                                 <?php foreach ($panels as $panel): ?>
                                 <tr>
                                     <td><?php echo htmlspecialchars($panel['name_panel'] ?? 'N/A'); ?></td>
-                                    <td><?php echo htmlspecialchars($panel['type_panel'] ?? 'Marzban'); ?></td>
+                                    <td><?php echo htmlspecialchars($panel['type'] ?? 'marzban'); ?></td>
                                     <td><small><?php echo htmlspecialchars($panel['url_panel'] ?? 'N/A'); ?></small></td>
                                     <td>
                                         <span class="badge success">فعال</span>

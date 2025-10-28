@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/api.php';
 $auth = new Auth();
 $auth->requireLogin();
 $admin = $auth->getCurrentAdmin();
+if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
 require_once __DIR__ . '/../config.php';
 

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/bot_core.php';
 
 $auth = new Auth();
 $auth->requireLogin();
@@ -189,51 +190,63 @@ if (!$invoice) {
                         <div class="detail-card">
                             <h3>اطلاعات سرویس</h3>
                             <div class="detail-row">
-                                <span class="detail-label">شناسه سرویس:</span>
-                                <span class="detail-value"><?php echo htmlspecialchars($invoice['Service_id']); ?></span>
+                                <span class="detail-label">نام کاربری سرویس:</span>
+                                <span class="detail-value"><?php echo htmlspecialchars($invoice['username'] ?? ''); ?></span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">نام کاربری:</span>
-                                <span class="detail-value"><?php echo htmlspecialchars($invoice['username_id']); ?></span>
+                                <span class="detail-label">کاربر تلگرام:</span>
+                                <span class="detail-value"><?php echo htmlspecialchars($invoice['telegram_username'] ?? ''); ?></span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">وضعیت:</span>
                                 <span class="detail-value">
-                                    <span class="status-badge status-<?php echo $invoice['status']; ?>">
+                                    <span class="status-badge status-<?php echo htmlspecialchars($invoice['Status'] ?? ''); ?>">
                                         <?php 
-                                        $statusMap = ['active' => 'فعال', 'expired' => 'منقضی', 'pending' => 'در انتظار'];
-                                        echo $statusMap[$invoice['status']] ?? $invoice['status'];
+                                        $statusMap = ['active' => 'فعال', 'expired' => 'منقضی', 'Unpaid' => 'پرداخت نشده'];
+                                        $st = $invoice['Status'] ?? '';
+                                        echo $statusMap[$st] ?? $st;
                                         ?>
                                     </span>
                                 </span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">محصول:</span>
-                                <span class="detail-value"><?php echo htmlspecialchars($invoice['Product_id'] ?? 'N/A'); ?></span>
+                                <span class="detail-value"><?php echo htmlspecialchars($invoice['name_product'] ?? 'N/A'); ?></span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">پنل:</span>
-                                <span class="detail-value"><?php echo htmlspecialchars($invoice['panel'] ?? 'N/A'); ?></span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">لوکیشن:</span>
-                                <span class="detail-value"><?php echo htmlspecialchars($invoice['Location'] ?? 'N/A'); ?></span>
+                                <span class="detail-label">پنل/لوکیشن:</span>
+                                <span class="detail-value"><?php echo htmlspecialchars($invoice['Service_location'] ?? 'N/A'); ?></span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">حجم:</span>
-                                <span class="detail-value"><?php echo number_format($invoice['Volume']); ?> GB</span>
+                                <span class="detail-value"><?php echo isset($invoice['Volume']) ? (int)$invoice['Volume'] . ' GB' : '-'; ?></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">زمان سرویس:</span>
+                                <span class="detail-value"><?php echo isset($invoice['Service_time']) ? (int)$invoice['Service_time'] . ' روز' : '-'; ?></span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">قیمت:</span>
-                                <span class="detail-value"><?php echo number_format($invoice['Price']); ?> تومان</span>
+                                <span class="detail-value"><?php echo number_format((int)($invoice['price_product'] ?? 0)); ?> تومان</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">تاریخ شروع:</span>
-                                <span class="detail-value"><?php echo $invoice['Date_start']; ?></span>
+                                <span class="detail-value"><?php echo htmlspecialchars($invoice['time_sell'] ?? ''); ?></span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">تاریخ پایان:</span>
-                                <span class="detail-value"><?php echo $invoice['Date_end']; ?></span>
+                                <span class="detail-label">تاریخ پایان (محاسبه‌شده):</span>
+                                <span class="detail-value"><?php echo ($invoice['Service_time'] && is_numeric($invoice['Service_time']) && is_numeric($invoice['time_sell'])) ? date('Y-m-d H:i:s', (int)$invoice['time_sell'] + ((int)$invoice['Service_time']*86400)) : '-'; ?></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="detail-card" style="margin-top: 15px;">
+                            <h3>عملیات سرویس</h3>
+                            <div class="action-buttons">
+                                <button class="btn btn-warning" onclick="serviceAction('reset_usage')">🔄 ریست مصرف</button>
+                                <button class="btn btn-info" onclick="serviceAction('toggle_status')">⏯️ تغییر وضعیت فعال/غیرفعال</button>
+                                <button class="btn btn-secondary" onclick="serviceAction('revoke_sub')">♻️ بازتولید لینک ساب</button>
+                                <button class="btn btn-danger" onclick="serviceAction('delete_service')">🗑️ حذف سرویس</button>
                             </div>
                         </div>
                         
@@ -510,6 +523,27 @@ if (!$invoice) {
                     alert('خطا: ' + data.message);
                 }
             });
+        }
+    </script>
+    <script>
+        function serviceAction(action) {
+            if (action === 'delete_service' && !confirm('آیا از حذف سرویس اطمینان دارید؟')) return;
+            const params = new URLSearchParams();
+            params.append('action', action);
+            params.append('invoice_id', '<?php echo htmlspecialchars($invoice_id); ?>');
+            params.append('csrf_token', '<?php echo $auth->getCsrfToken(); ?>');
+
+            fetch('/webpanel/api/service_action.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params
+            })
+            .then(r => r.json())
+            .then(d => {
+                alert(d.success ? 'انجام شد' : ('خطا: ' + (d.message || 'ناموفق')));
+                if (d.success) setTimeout(() => location.reload(), 800);
+            })
+            .catch(() => alert('خطا در ارتباط با سرور'));
         }
     </script>
 </body>

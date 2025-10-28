@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/bot_core.php'; // provides $pdo
 
 header('Content-Type: application/json');
 
@@ -11,82 +11,64 @@ if (!$auth->isLoggedIn()) {
 }
 
 try {
-    $db = Database::getInstance()->getConnection();
+    global $pdo;
     $activities = [];
-    
-    // Get recent users (last 24 hours)
-    $stmt = $db->prepare("SELECT username_id, Date_start FROM user WHERE Date_start >= DATE_SUB(NOW(), INTERVAL 1 DAY) ORDER BY Date_start DESC LIMIT 3");
+
+    // Recent users (last 24 hours)
+    $stmt = $pdo->prepare(
+        "SELECT username, register FROM user WHERE register >= (UNIX_TIMESTAMP(NOW()) - 86400) ORDER BY register DESC LIMIT 3"
+    );
     $stmt->execute();
     $newUsers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
     foreach ($newUsers as $user) {
-        $timeAgo = timeAgo(strtotime($user['Date_start']));
         $activities[] = [
             'icon' => '👤',
-            'text' => 'کاربر جدید ثبت نام کرد: ' . htmlspecialchars($user['username_id']),
-            'time' => $timeAgo,
+            'text' => 'کاربر جدید ثبت نام کرد: ' . htmlspecialchars($user['username'] ?? 'بدون نام'),
+            'time' => timeAgo((int)$user['register']),
             'type' => 'success'
         ];
     }
-    
-    // Get recent payments (last 24 hours)
-    $stmt = $db->prepare("SELECT Price, timestamp FROM payment WHERE status = 'completed' AND timestamp >= DATE_SUB(NOW(), INTERVAL 1 DAY) ORDER BY timestamp DESC LIMIT 3");
+
+    // Recent completed payments (last 24 hours)
+    $stmt = $pdo->prepare(
+        "SELECT price, time FROM Payment_report WHERE payment_Status IN ('completed','paid') AND time >= DATE_SUB(NOW(), INTERVAL 1 DAY) ORDER BY time DESC LIMIT 3"
+    );
     $stmt->execute();
     $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
     foreach ($payments as $payment) {
-        $timeAgo = timeAgo(strtotime($payment['timestamp']));
+        $ts = is_numeric($payment['time']) ? (int)$payment['time'] : strtotime($payment['time']);
         $activities[] = [
             'icon' => '💰',
-            'text' => 'پرداخت ' . number_format($payment['Price']) . ' تومان انجام شد',
-            'time' => $timeAgo,
+            'text' => 'پرداخت ' . number_format((int)$payment['price']) . ' تومان انجام شد',
+            'time' => timeAgo($ts),
             'type' => 'success'
         ];
     }
-    
-    // Get recent services (last 24 hours)
-    $stmt = $db->prepare("SELECT Service_id, Date_start FROM invoices WHERE Date_start >= DATE_SUB(NOW(), INTERVAL 1 DAY) ORDER BY Date_start DESC LIMIT 3");
+
+    // Recent invoices/services (last 24 hours by time_sell)
+    $stmt = $pdo->prepare(
+        "SELECT id_invoice, username, time_sell FROM invoice WHERE time_sell >= (UNIX_TIMESTAMP(NOW()) - 86400) ORDER BY time_sell DESC LIMIT 3"
+    );
     $stmt->execute();
     $services = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
     foreach ($services as $service) {
-        $timeAgo = timeAgo(strtotime($service['Date_start']));
         $activities[] = [
             'icon' => '📋',
-            'text' => 'سرویس جدید ایجاد شد: ' . htmlspecialchars($service['Service_id']),
-            'time' => $timeAgo,
+            'text' => 'سرویس جدید ایجاد شد: ' . htmlspecialchars($service['username'] ?? $service['id_invoice']),
+            'time' => timeAgo((int)$service['time_sell']),
             'type' => 'info'
         ];
     }
-    
-    // Get expired services (last 24 hours)
-    $stmt = $db->prepare("SELECT Service_id, Date_end FROM invoices WHERE status = 'expired' AND Date_end >= DATE_SUB(NOW(), INTERVAL 1 DAY) ORDER BY Date_end DESC LIMIT 2");
-    $stmt->execute();
-    $expired = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    foreach ($expired as $exp) {
-        $timeAgo = timeAgo(strtotime($exp['Date_end']));
-        $activities[] = [
-            'icon' => '⚠️',
-            'text' => 'سرویس منقضی شد: ' . htmlspecialchars($exp['Service_id']),
-            'time' => $timeAgo,
-            'type' => 'warning'
-        ];
-    }
-    
-    // Sort all activities by timestamp (most recent first)
-    usort($activities, function($a, $b) {
-        return strcmp($b['time'], $a['time']);
-    });
-    
-    // Limit to 10 most recent activities
+
+    // Sort newest first by time string weight is approximate; list already grouped by newest per-query
+    // Limit to 10 most recent
     $activities = array_slice($activities, 0, 10);
-    
+
     echo json_encode([
         'success' => true,
         'activities' => $activities
     ]);
-    
+
 } catch (Exception $e) {
     echo json_encode([
         'success' => false,
@@ -95,19 +77,10 @@ try {
 }
 
 function timeAgo($timestamp) {
-    $difference = time() - $timestamp;
-    
-    if ($difference < 60) {
-        return 'همین الان';
-    } elseif ($difference < 3600) {
-        $minutes = floor($difference / 60);
-        return $minutes . ' دقیقه پیش';
-    } elseif ($difference < 86400) {
-        $hours = floor($difference / 3600);
-        return $hours . ' ساعت پیش';
-    } else {
-        $days = floor($difference / 86400);
-        return $days . ' روز پیش';
-    }
+    $difference = time() - (int)$timestamp;
+    if ($difference < 60) return 'همین الان';
+    if ($difference < 3600) return floor($difference / 60) . ' دقیقه پیش';
+    if ($difference < 86400) return floor($difference / 3600) . ' ساعت پیش';
+    return floor($difference / 86400) . ' روز پیش';
 }
 ?>

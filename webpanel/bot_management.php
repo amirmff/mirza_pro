@@ -4,14 +4,19 @@
  * Control bot process, view logs, manage webhook
  */
 
-require_once 'includes/auth.php';
-require_auth();
-check_permission('administrator');
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/../config.php';
+
+$auth = new Auth();
+$auth->requireLogin();
+$currentAdmin = $auth->getCurrentAdmin();
+if (!$currentAdmin || ($currentAdmin['rule'] ?? '') !== 'administrator') {
+    http_response_code(403);
+    exit('Forbidden');
+}
 
 $page_title = 'مدیریت ربات';
 $active_page = 'bot_management';
-
-include 'includes/header.php';
 
 // Get bot status
 $bot_status = [
@@ -58,6 +63,7 @@ if (isset($APIKEY)) {
 }
 ?>
 
+<?php $admin = $currentAdmin; ?>
 <div class="container">
     <div class="page-header">
         <h1><?php echo $page_title; ?></h1>
@@ -184,7 +190,7 @@ function controlBot(action) {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `action=${action}&csrf_token=<?php echo generate_csrf_token(); ?>`
+        body: `action=${action}&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
     })
     .then(response => response.json())
     .then(data => {
@@ -210,7 +216,7 @@ function updateWebhook() {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `action=webhook&csrf_token=<?php echo generate_csrf_token(); ?>`
+        body: `action=webhook&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
     })
     .then(response => response.json())
     .then(data => {

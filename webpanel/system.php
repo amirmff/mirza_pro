@@ -4,14 +4,19 @@
  * SSL setup, backups, system monitoring, and server configuration
  */
 
-require_once 'includes/auth.php';
-require_auth();
-check_permission('administrator');
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/../config.php';
+
+$auth = new Auth();
+$auth->requireLogin();
+$currentAdmin = $auth->getCurrentAdmin();
+if (!$currentAdmin || ($currentAdmin['rule'] ?? '') !== 'administrator') {
+    http_response_code(403);
+    exit('Forbidden');
+}
 
 $page_title = 'مدیریت سیستم';
 $active_page = 'system';
-
-include 'includes/header.php';
 
 // Get system information
 $sys_info = [
@@ -43,6 +48,7 @@ if (!empty($domainhosts)) {
 }
 ?>
 
+<?php $admin = $currentAdmin; ?>
 <div class="container">
     <div class="page-header">
         <h1><?php echo $page_title; ?></h1>

@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/bot_core.php';
 $auth = new Auth();
 $auth->requireLogin();
 $admin = $auth->getCurrentAdmin();
+if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
 // Handle payment approval/rejection using bot_core functions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -31,17 +32,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 $status_filter = $_GET['status'] ?? 'pending';
-$page = $_GET['page'] ?? 1;
+$page = (int)($_GET['page'] ?? 1);
+$page = max($page, 1);
 $limit = 50;
 $offset = ($page - 1) * $limit;
 
-$where = $status_filter !== 'all' ? "WHERE payment_Status = '$status_filter'" : '';
+$allowedStatuses = ['pending','paid','completed','rejected','all'];
+if (!in_array($status_filter, $allowedStatuses)) { $status_filter = 'all'; }
 
-$payments_stmt = $pdo->query("SELECT p.*, u.username, u.number FROM Payment_report p LEFT JOIN user u ON p.id_user = u.id $where ORDER BY p.id_payment DESC LIMIT $limit OFFSET $offset");
+$where = $status_filter !== 'all' ? "WHERE payment_Status = :status" : '';
+
+$sql = "SELECT p.*, u.username, u.number FROM Payment_report p LEFT JOIN user u ON p.id_user = u.id $where ORDER BY p.id DESC LIMIT :limit OFFSET :offset";
+$payments_stmt = $pdo->prepare($sql);
+if ($status_filter !== 'all') { $payments_stmt->bindValue(':status', $status_filter, PDO::PARAM_STR); }
+$payments_stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+$payments_stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+$payments_stmt->execute();
 $payments = $payments_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$total_stmt = $pdo->query("SELECT COUNT(*) as total FROM Payment_report $where");
-$total = $total_stmt->fetch(PDO::FETCH_ASSOC)['total'];
+$total_sql = "SELECT COUNT(*) as total FROM Payment_report $where";
+$total_stmt = $pdo->prepare($total_sql);
+if ($status_filter !== 'all') { $total_stmt->bindValue(':status', $status_filter, PDO::PARAM_STR); }
+$total_stmt->execute();
+$total = (int)$total_stmt->fetch(PDO::FETCH_ASSOC)['total'];
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -70,6 +83,7 @@ $total = $total_stmt->fetch(PDO::FETCH_ASSOC)['total'];
                             <option value="all" <?php echo $status_filter === 'all' ? 'selected' : ''; ?>>همه</option>
                             <option value="pending" <?php echo $status_filter === 'pending' ? 'selected' : ''; ?>>در انتظار تایید</option>
                             <option value="paid" <?php echo $status_filter === 'paid' ? 'selected' : ''; ?>>پرداخت شده</option>
+                            <option value="completed" <?php echo $status_filter === 'completed' ? 'selected' : ''; ?>>تکمیل شده</option>
                             <option value="rejected" <?php echo $status_filter === 'rejected' ? 'selected' : ''; ?>>رد شده</option>
                         </select>
                     </div>
@@ -97,22 +111,22 @@ $total = $total_stmt->fetch(PDO::FETCH_ASSOC)['total'];
                             <tbody>
                                 <?php foreach ($payments as $payment): ?>
                                 <tr>
-                                    <td><?php echo $payment['id_payment']; ?></td>
+                                    <td><?php echo $payment['id']; ?></td>
                                     <td>
                                         <div><?php echo htmlspecialchars($payment['username'] ?? 'N/A'); ?></div>
                                         <small><?php echo htmlspecialchars($payment['number'] ?? ''); ?></small>
                                     </td>
                                     <td><?php echo number_format($payment['price'] ?? 0); ?> تومان</td>
-                                    <td><?php echo htmlspecialchars($payment['payment_Method'] ?? 'N/A'); ?></td>
+                                    <td><?php echo htmlspecialchars($payment['Payment_Method'] ?? 'N/A'); ?></td>
                                     <td>
                                         <span class="badge <?php 
-                                            echo $payment['payment_Status'] === 'paid' ? 'success' : 
+                                            echo in_array($payment['payment_Status'], ['paid','completed']) ? 'success' : 
                                                 ($payment['payment_Status'] === 'rejected' ? 'danger' : 'warning'); 
                                         ?>">
                                             <?php echo htmlspecialchars($payment['payment_Status'] ?? 'N/A'); ?>
                                         </span>
                                     </td>
-                                    <td><?php echo htmlspecialchars($payment['date'] ?? 'N/A'); ?></td>
+                                    <td><?php echo htmlspecialchars($payment['time'] ?? 'N/A'); ?></td>
                                     <td>
                                         <?php if ($payment['payment_Status'] === 'pending'): ?>
                                             <form method="POST" style="display:inline;">

@@ -6,6 +6,7 @@ $auth = new Auth();
 $auth->requireLogin();
 
 $admin = $auth->getCurrentAdmin();
+if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
 // Fetch all products from bot's product table
 $products = getAllProducts();
@@ -17,6 +18,7 @@ foreach ($products as &$product) {
     $stmt->execute([$product['name_product']]);
     $product['sold_count'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
 }
+?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -58,10 +60,12 @@ foreach ($products as &$product) {
                                     <td><?php echo htmlspecialchars($product['name_product'] ?? 'N/A'); ?></td>
                                     <td><?php echo htmlspecialchars($product['Location'] ?? 'N/A'); ?></td>
                                     <td>
-                                        <?php if (!empty($product['volume_GB'])): ?>
-                                            <?php echo $product['volume_GB']; ?> GB
-                                        <?php elseif (!empty($product['Day'])): ?>
-                                            <?php echo $product['Day']; ?> روز
+                                        <?php if (!empty($product['Volume_constraint'])): ?>
+                                            <?php echo (int)$product['Volume_constraint']; ?> GB
+                                        <?php elseif (!empty($product['Service_time'])): ?>
+                                            <?php echo (int)$product['Service_time']; ?> روز
+                                        <?php else: ?>
+                                            -
                                         <?php endif; ?>
                                     </td>
                                     <td><?php echo number_format($product['price_product'] ?? 0); ?> تومان</td>
@@ -71,7 +75,7 @@ foreach ($products as &$product) {
                                         </span>
                                     </td>
                                     <td>
-                                        <button class="btn-sm" onclick="editProduct(<?php echo $product['id_product'] ?? 0; ?>)">ویرایش</button>
+                                        <button class="btn-sm" onclick="editProduct(<?php echo (int)($product['id'] ?? 0); ?>)">ویرایش</button>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>

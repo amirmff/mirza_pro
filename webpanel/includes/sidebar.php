@@ -53,7 +53,7 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
     
     <div class="sidebar-footer">
         <div class="admin-info">
-            <strong><?php echo htmlspecialchars($admin['username_admin'] ?? 'Admin'); ?></strong>
+            <strong><?php echo htmlspecialchars($admin['username'] ?? 'Admin'); ?></strong>
             <small><?php echo htmlspecialchars($admin['rule'] ?? 'Administrator'); ?></small>
         </div>
         <a href="/webpanel/logout.php" class="btn-logout">خروج</a>

@@ -6,36 +6,41 @@ $auth = new Auth();
 $auth->requireLogin();
 
 $admin = $auth->getCurrentAdmin();
+if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
-// Fetch invoices from bot's invoice table
-$invoices = select("invoice", "*", null, null, "fetchAll");
-
-// Get user and panel info for each invoice
-foreach ($invoices as &$invoice) {
-    $user = select("user", "username", "id", $invoice['id_user'], "select");
-    $invoice['user_telegram'] = $user['username'] ?? 'N/A';
-    
-    $panel = getPanelByName($invoice['Service_location']);
-    $invoice['panel_url'] = $panel['url_panel'] ?? 'N/A';
-}
-$page = $_GET['page'] ?? 1;
+$page = (int)($_GET['page'] ?? 1);
+$page = max($page, 1);
 $status_filter = $_GET['status'] ?? 'all';
 
 $where = [];
+$params = [];
 if ($status_filter !== 'all') {
-    $where[] = "Status = '$status_filter'";
+    $where[] = "i.Status = :status";
+    $params[':status'] = $status_filter;
 }
 $where_clause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $limit = 50;
 $offset = ($page - 1) * $limit;
 
-$invoices_stmt = $pdo->query("SELECT i.*, u.username, u.number FROM invoice i LEFT JOIN user u ON i.id_user = u.id $where_clause ORDER BY i.id_invoice DESC LIMIT $limit OFFSET $offset");
+$sql = "SELECT i.id_invoice, i.id_user, i.username, i.name_product, i.Service_location, i.Volume, i.Service_time, i.price_product, i.Status, i.time_sell, u.username AS telegram_username, u.number 
+        FROM invoice i 
+        LEFT JOIN user u ON i.id_user = u.id 
+        $where_clause 
+        ORDER BY i.id_invoice DESC 
+        LIMIT :limit OFFSET :offset";
+$invoices_stmt = $pdo->prepare($sql);
+foreach ($params as $k=>$v) { $invoices_stmt->bindValue($k, $v); }
+$invoices_stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+$invoices_stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
+$invoices_stmt->execute();
 $invoices = $invoices_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$total_stmt = $pdo->query("SELECT COUNT(*) as total FROM invoice i $where_clause");
-$total = $total_stmt->fetch(PDO::FETCH_ASSOC)['total'];
-$total_pages = ceil($total / $limit);
+$total_stmt = $pdo->prepare("SELECT COUNT(*) as total FROM invoice i $where_clause");
+foreach ($params as $k=>$v) { $total_stmt->bindValue($k, $v); }
+$total_stmt->execute();
+$total = (int)$total_stmt->fetch(PDO::FETCH_ASSOC)['total'];
+$total_pages = (int)ceil($total / $limit);
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -102,15 +107,16 @@ $total_pages = ceil($total / $limit);
                                         <small><?php echo htmlspecialchars($invoice['number'] ?? ''); ?></small>
                                     </td>
                                     <td><?php echo htmlspecialchars($invoice['name_product'] ?? 'N/A'); ?></td>
-                                    <td><?php echo htmlspecialchars($invoice['Location'] ?? 'N/A'); ?></td>
+                                    <td><?php echo htmlspecialchars($invoice['Service_location'] ?? 'N/A'); ?></td>
                                     <td>
-                                        <?php if (!empty($invoice['volume_GB'])): ?>
-                                            <?php echo $invoice['volume_GB']; ?> GB
-                                        <?php elseif (!empty($invoice['Day'])): ?>
-                                            <?php echo $invoice['Day']; ?> روز
+                                        <?php if (!empty($invoice['Volume'])): ?>
+                                            <?php echo (int)$invoice['Volume']; ?> GB
+                                        <?php elseif (!empty($invoice['Service_time'])): ?>
+                                            <?php echo (int)$invoice['Service_time']; ?> روز
+                                        <?php else: ?>-
                                         <?php endif; ?>
                                     </td>
-                                    <td><?php echo number_format($invoice['price'] ?? 0); ?> تومان</td>
+                                    <td><?php echo number_format((int)($invoice['price_product'] ?? 0)); ?> تومان</td>
                                     <td>
                                         <span class="badge <?php 
                                             echo $invoice['Status'] === 'active' ? 'success' : 
@@ -119,8 +125,8 @@ $total_pages = ceil($total / $limit);
                                             <?php echo htmlspecialchars($invoice['Status'] ?? 'N/A'); ?>
                                         </span>
                                     </td>
-                                    <td><?php echo htmlspecialchars($invoice['date_invoice'] ?? 'N/A'); ?></td>
-                                    <td><?php echo htmlspecialchars($invoice['date_off'] ?? 'N/A'); ?></td>
+                                    <td><?php echo htmlspecialchars($invoice['time_sell'] ?? 'N/A'); ?></td>
+                                    <td><?php echo ($invoice['Service_time'] && is_numeric($invoice['Service_time']) && is_numeric($invoice['time_sell'])) ? date('Y-m-d H:i:s', (int)$invoice['time_sell'] + ((int)$invoice['Service_time']*86400)) : '-'; ?></td>
                                     <td>
                                         <button class="btn-sm" onclick="viewInvoice(<?php echo $invoice['id_invoice']; ?>)">مشاهده</button>
                                     </td>

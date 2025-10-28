@@ -5,20 +5,27 @@
  */
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/bot_core.php';
 
-// Require authentication
-if (!isset($_SESSION['admin_id'])) {
+header('Content-Type: application/json');
+
+$auth = new Auth();
+if (!$auth->isLoggedIn()) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
 
-// Check admin permission
-check_permission('administrator');
+$currentAdmin = $auth->getCurrentAdmin();
+if (!$currentAdmin || ($currentAdmin['rule'] ?? '') !== 'administrator') {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Forbidden']);
+    exit;
+}
 
 // CSRF protection for POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+    if (!$auth->verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
         exit;
@@ -27,7 +34,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
-header('Content-Type: application/json');
+function log_activity($admin_id, $action, $description) {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("INSERT INTO admin_logs (admin_id, action, description, ip_address, created_at) VALUES (:admin_id, :action, :description, :ip, NOW())");
+        $stmt->execute([
+            ':admin_id' => $admin_id,
+            ':action' => $action,
+            ':description' => $description,
+            ':ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+        ]);
+    } catch (Exception $e) {
+        error_log('log_activity failed: ' . $e->getMessage());
+    }
+}
 
 switch ($action) {
     case 'start':

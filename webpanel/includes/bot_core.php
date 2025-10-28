@@ -213,13 +213,13 @@ function getStatistics() {
     $stmt = $pdo->query("SELECT COUNT(*) as count FROM invoice WHERE Status = 'active'");
     $stats['active_services'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
-    // Total revenue
-    $stmt = $pdo->query("SELECT SUM(CAST(price AS UNSIGNED)) as total FROM Payment_report WHERE payment_Status = 'completed'");
+    // Total revenue (treat both 'paid' and 'completed' as paid)
+    $stmt = $pdo->query("SELECT SUM(CAST(price AS UNSIGNED)) as total FROM Payment_report WHERE payment_Status IN ('paid','completed')");
     $stats['total_revenue'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
     
     // Today revenue
     $today = date('Y-m-d');
-    $stmt = $pdo->prepare("SELECT SUM(CAST(price AS UNSIGNED)) as total FROM Payment_report WHERE payment_Status = 'completed' AND DATE(time) = ?");
+    $stmt = $pdo->prepare("SELECT SUM(CAST(price AS UNSIGNED)) as total FROM Payment_report WHERE payment_Status IN ('paid','completed') AND DATE(time) = ?");
     $stmt->execute([$today]);
     $stats['today_revenue'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
     
@@ -256,8 +256,8 @@ function approvePayment($payment_id, $admin_note = '') {
         return false;
     }
     
-    // Update payment status
-    update("Payment_report", "payment_Status", "completed", "id", $payment_id);
+    // Update payment status (normalize to 'paid' to match existing data)
+    update("Payment_report", "payment_Status", "paid", "id", $payment_id);
     if ($admin_note) {
         update("Payment_report", "dec_not_confirmed", $admin_note, "id", $payment_id);
     }

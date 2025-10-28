@@ -130,8 +130,8 @@ $payments = $user_result['payments'];
                                 <td><?php echo $invoice['id_invoice']; ?></td>
                                 <td><?php echo htmlspecialchars($invoice['name_product']); ?></td>
                                 <td><span class="badge"><?php echo $invoice['Status']; ?></span></td>
-                                <td><?php echo $invoice['date_invoice']; ?></td>
-                                <td><?php echo $invoice['date_off']; ?></td>
+                                <td><?php echo htmlspecialchars($invoice['time_sell'] ?? '-'); ?></td>
+                                <td><?php echo ($invoice['Service_time'] && is_numeric($invoice['Service_time']) && is_numeric($invoice['time_sell'])) ? date('Y-m-d H:i:s', (int)$invoice['time_sell'] + ((int)$invoice['Service_time']*86400)) : '-'; ?></td>
                                 <td>
                                     <a href="/webpanel/invoice_detail.php?id=<?php echo $invoice['id_invoice']; ?>" class="btn-sm">مشاهده</a>
                                 </td>
@@ -157,11 +157,11 @@ $payments = $user_result['payments'];
                         <tbody>
                             <?php foreach ($payments as $payment): ?>
                             <tr>
-                                <td><?php echo $payment['id_payment']; ?></td>
+                                <td><?php echo $payment['id']; ?></td>
                                 <td><?php echo number_format($payment['price']); ?></td>
                                 <td><?php echo htmlspecialchars($payment['Payment_Method']); ?></td>
                                 <td><span class="badge"><?php echo $payment['payment_Status']; ?></span></td>
-                                <td><?php echo $payment['date']; ?></td>
+                                <td><?php echo htmlspecialchars($payment['time'] ?? ''); ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>

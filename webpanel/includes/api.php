@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../config.php';
 require_once __DIR__ . '/../../function.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/bot_core.php'; // use bot helpers like sendTelegramMessage()
 
 class API {
     private $pdo;
@@ -81,7 +82,7 @@ class API {
         $invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Get payments
-        $stmt = $this->pdo->prepare("SELECT * FROM Payment_report WHERE id_user = :id ORDER BY id_payment DESC LIMIT 10");
+        $stmt = $this->pdo->prepare("SELECT * FROM Payment_report WHERE id_user = :id ORDER BY id DESC LIMIT 10");
         $stmt->bindParam(':id', $user_id, PDO::PARAM_INT);
         $stmt->execute();
         $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -148,6 +149,16 @@ class API {
             return ['success' => false, 'error' => 'خطا در حذف کاربر: ' . $e->getMessage()];
         }
     }
+
+    public function sendMessageToUser($user_id, $text) {
+        try {
+            // Prefer bot helper to ensure keyboards/parse_mode consistency
+            $ok = sendTelegramMessage($user_id, $text);
+            return $ok ? ['success' => true, 'message' => 'پیام ارسال شد'] : ['success' => false, 'error' => 'ارسال پیام ناموفق بود'];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
     
     // Panel Management
     public function getPanels() {
@@ -175,6 +186,21 @@ class API {
         $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return ['success' => true, 'products' => $products];
     }
+
+    // Invoice details
+    public function getInvoiceDetails($invoice_id) {
+        $sql = "SELECT i.*, u.username AS telegram_username, u.number
+                FROM invoice i
+                LEFT JOIN user u ON u.id = i.id_user
+                WHERE i.id_invoice = :id
+                LIMIT 1";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindParam(':id', $invoice_id, PDO::PARAM_INT);
+        $stmt->execute();
+        $inv = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$inv) return null;
+        return $inv;
+    }
     
     // Statistics
     public function getStatistics() {
@@ -196,12 +222,12 @@ class API {
         $stmt = $this->pdo->query("SELECT COUNT(*) as total FROM invoice WHERE Status = 'active'");
         $stats['active_services'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
         
-        // Total revenue
-        $stmt = $this->pdo->query("SELECT SUM(price) as total FROM Payment_report WHERE payment_Status = 'paid'");
+        // Total revenue (treat both 'paid' and 'completed' as paid)
+        $stmt = $this->pdo->query("SELECT SUM(price) as total FROM Payment_report WHERE payment_Status IN ('paid','completed')");
         $stats['total_revenue'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
         
         // Today's revenue
-        $stmt = $this->pdo->query("SELECT SUM(price) as total FROM Payment_report WHERE payment_Status = 'paid' AND DATE(time) = CURDATE()");
+        $stmt = $this->pdo->query("SELECT SUM(price) as total FROM Payment_report WHERE payment_Status IN ('paid','completed') AND DATE(time) = CURDATE()");
         $stats['today_revenue'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
         
         // New users today
@@ -230,7 +256,7 @@ class API {
         $total = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
         
         // Get payments
-        $sql = "SELECT * FROM Payment_report $where ORDER BY id_payment DESC LIMIT :limit OFFSET :offset";
+        $sql = "SELECT * FROM Payment_report $where ORDER BY id DESC LIMIT :limit OFFSET :offset";
         $stmt = $this->pdo->prepare($sql);
         if ($status !== 'all') {
             $stmt->bindValue(':status', $status, PDO::PARAM_STR);
