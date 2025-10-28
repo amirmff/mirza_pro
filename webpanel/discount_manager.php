@@ -7,6 +7,7 @@ $auth->requireLogin();
 
 $api = new API();
 $admin = $auth->getCurrentAdmin();
+if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
 // Fetch all discount codes
 $discounts = $api->getDiscounts();
@@ -319,10 +320,11 @@ $discounts = $api->getDiscounts();
         function deleteDiscount(id) {
             if (!confirm('آیا از حذف این کد تخفیف اطمینان دارید؟')) return;
             
+            const params = new URLSearchParams({ discount_id: id, csrf_token: '<?php echo $auth->getCsrfToken(); ?>' });
             fetch('/webpanel/api/delete_discount.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ discount_id: id })
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params
             })
             .then(response => response.json())
             .then(data => {
@@ -359,11 +361,10 @@ $discounts = $api->getDiscounts();
         document.getElementById('discountForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
-            
+            formData.append('csrf_token','<?php echo $auth->getCsrfToken(); ?>');
             const endpoint = formData.get('discount_id') ? 
                 '/webpanel/api/update_discount.php' : 
                 '/webpanel/api/add_discount.php';
-            
             fetch(endpoint, {
                 method: 'POST',
                 body: formData

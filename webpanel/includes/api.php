@@ -187,6 +187,26 @@ class API {
         return ['success' => true, 'products' => $products];
     }
 
+    // Discounts (map 'Discount' table to generic fields)
+    public function getDiscounts() {
+        $stmt = $this->pdo->query("SELECT * FROM Discount ORDER BY id DESC");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id' => (int)$r['id'],
+                'code' => $r['code'],
+                'type' => 'fixed',
+                'value' => (int)$r['price'],
+                'used' => (int)$r['limitused'],
+                'max_uses' => (int)$r['limituse'],
+                'expires_at' => null,
+                'description' => ''
+            ];
+        }
+        return $out;
+    }
+
     // Invoice details
     public function getInvoiceDetails($invoice_id) {
         $sql = "SELECT i.*, u.username AS telegram_username, u.number
