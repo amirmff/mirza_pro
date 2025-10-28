@@ -37,6 +37,10 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="icon">🏷️</span>
             <span>تخفیف‌ها</span>
         </a>
+        <a href="/webpanel/gift_manager.php" class="nav-item <?php echo $current_page === 'gift_manager' ? 'active' : ''; ?>">
+            <span class="icon">🎁</span>
+            <span>هدیه گروهی</span>
+        </a>
         <a href="/webpanel/settings.php" class="nav-item <?php echo $current_page === 'settings' ? 'active' : ''; ?>">
             <span class="icon">⚙️</span>
             <span>تنظیمات</span>
