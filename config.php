@@ -19,10 +19,40 @@ $dbname = '{database_name}';
 $usernamedb = '{username_db}';
 $passworddb = '{password_db}';
 
-// Check if credentials are still placeholders
+// Attempt to load credentials from installer files if placeholders
+if ($dbname === '{database_name}' || $usernamedb === '{username_db}' || $passworddb === '{password_db}') {
+    // 1) From installer creds file
+    $cred_file = '/root/.mirza_db_credentials';
+    if (is_readable($cred_file)) {
+        $lines = @file($cred_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if ($lines) {
+            foreach ($lines as $ln) {
+                if (strpos($ln, '=') !== false) {
+                    list($k, $v) = array_map('trim', explode('=', $ln, 2));
+                    if ($k === 'DB_NAME') $dbname = $v;
+                    if ($k === 'DB_USER') $usernamedb = $v;
+                    if ($k === 'DB_PASSWORD') $passworddb = $v;
+                }
+            }
+        }
+    }
+    // 2) From webpanel JSON (created by installer)
+    if (($dbname === '{database_name}' || $usernamedb === '{username_db}' || $passworddb === '{password_db}')) {
+        $json_file = __DIR__ . '/webpanel/.db_credentials.json';
+        if (is_readable($json_file)) {
+            $j = json_decode(@file_get_contents($json_file), true);
+            if (is_array($j)) {
+                if (!empty($j['db_name'])) $dbname = $j['db_name'];
+                if (!empty($j['db_user'])) $usernamedb = $j['db_user'];
+                if (!empty($j['db_password'])) $passworddb = $j['db_password'];
+            }
+        }
+    }
+}
+
+// If still placeholders and setup flag exists, redirect to setup. Otherwise, show error.
 if ($dbname === '{database_name}' || $usernamedb === '{username_db}' || $passworddb === '{password_db}') {
     if (file_exists($needs_setup_file)) {
-        // Redirect to setup wizard
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $host = $_SERVER['HTTP_HOST'];
         header("Location: {$protocol}://{$host}/webpanel/setup.php");
