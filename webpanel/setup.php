@@ -136,15 +136,30 @@ PHP;
                 }
             }
             
-            // Create/Update admin user
+            // Create/Update admin user (support legacy columns)
             $hashed_password = password_hash($_SESSION['admin_password'], PASSWORD_BCRYPT);
-            $stmt = $pdo->prepare("INSERT INTO admin (id_admin, username, password, rule) VALUES (:id, :username, :password, 'administrator')
-                                   ON DUPLICATE KEY UPDATE password = VALUES(password), username = VALUES(username)");
-            $stmt->execute([
-                ':id' => $_SESSION['admin_id'],
-                ':username' => $_SESSION['admin_username'],
-                ':password' => $hashed_password
-            ]);
+            $cols = $pdo->query("SHOW COLUMNS FROM admin")->fetchAll(PDO::FETCH_COLUMN, 0);
+            $hasNormalized = in_array('username', $cols) && in_array('password', $cols);
+            $hasLegacy    = in_array('username_admin', $cols) && in_array('password_admin', $cols);
+            if ($hasNormalized) {
+                $stmt = $pdo->prepare("INSERT INTO admin (id_admin, username, password, rule) VALUES (:id, :username, :password, 'administrator')
+                                       ON DUPLICATE KEY UPDATE password = VALUES(password), username = VALUES(username)");
+                $stmt->execute([
+                    ':id' => $_SESSION['admin_id'],
+                    ':username' => $_SESSION['admin_username'],
+                    ':password' => $hashed_password
+                ]);
+            } elseif ($hasLegacy) {
+                $stmt = $pdo->prepare("INSERT INTO admin (id_admin, username_admin, password_admin, rule) VALUES (:id, :username, :password, 'administrator')
+                                       ON DUPLICATE KEY UPDATE password_admin = VALUES(password_admin), username_admin = VALUES(username_admin)");
+                $stmt->execute([
+                    ':id' => $_SESSION['admin_id'],
+                    ':username' => $_SESSION['admin_username'],
+                    ':password' => $_SESSION['admin_password'] // legacy is plain text
+                ]);
+            } else {
+                throw new Exception('Admin table schema is missing expected columns.');
+            }
             
             // Set webhook
             $webhook_url = !empty($_SESSION['domain']) ? 
