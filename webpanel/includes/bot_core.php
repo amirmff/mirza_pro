@@ -15,7 +15,7 @@ require_once __DIR__ . '/../../keyboard.php';
 $ManagePanel = new ManagePanel();
 
 /** Ensure notifications tables exist */
-(function ensureNotificationsTables(){
+call_user_func(function () {
     global $pdo;
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS notifications_channels (
@@ -39,7 +39,7 @@ $ManagePanel = new ManagePanel();
             INDEX idx_cat_created (category, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     } catch (Exception $e) { error_log('ensureNotificationsTables: '.$e->getMessage()); }
-})();
+});
 
 /**
  * Get bot settings
