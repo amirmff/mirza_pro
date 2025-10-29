@@ -329,32 +329,7 @@ class API {
         return ['success' => false, 'error' => 'خطا در بروزرسانی تنظیمات'];
     }
     
-    // Send message to user
-    public function sendMessageToUser($user_id, $message) {
-        require_once __DIR__ . '/../../botapi.php';
-        $result = sendmessage($user_id, $message, null, 'HTML');
-        
-        if ($result && isset($result['ok']) && $result['ok']) {
-            return ['success' => true, 'message' => 'پیام با موفقیت ارسال شد'];
-        }
-        
-        return ['success' => false, 'error' => 'خطا در ارسال پیام'];
-    }
-    
     // Invoice Management
-    public function getInvoiceDetails($invoice_id) {
-        $stmt = $this->pdo->prepare("SELECT i.*, u.username, u.number FROM invoice i LEFT JOIN user u ON i.id_user = u.id WHERE i.id_invoice = :id");
-        $stmt->bindParam(':id', $invoice_id, PDO::PARAM_INT);
-        $stmt->execute();
-        $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$invoice) {
-            return ['success' => false, 'error' => 'فاکتور یافت نشد'];
-        }
-        
-        return ['success' => true, 'invoice' => $invoice];
-    }
-    
     public function updateInvoice($invoice_id, $data) {
         $allowed = ['Status', 'date_off', 'volume_GB', 'Day', 'Location'];
         $updates = [];
