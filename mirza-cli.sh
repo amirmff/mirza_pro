@@ -1,427 +1,160 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# Mirza Pro - CLI management tool and interactive menu
+set -euo pipefail
 
-#########################################
-# Mirza Pro - CLI Management Tool
-# Interactive bot management interface
-# Also supports non-interactive subcommands
-#########################################
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-NC='\033[0m' # No Color
-
+PROGRAM="mirza_bot"
 INSTALL_DIR="/var/www/mirza_pro"
-LOG_FILE="/var/log/mirza_pro_bot.log"
+PHP_VERSION="8.2"
+LOG_FILE="/var/log/${PROGRAM}.log"
 
-# Check if running as root
-check_root() {
-    if [ "$EUID" -ne 0 ]; then 
-        echo -e "${RED}Please run as root (use sudo mirza)${NC}"
-        exit 1
-    fi
-}
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
 
-# Print header
-print_header() {
-    [ -t 1 ] && clear || true
-    echo -e "${CYAN}"
-    echo "╔════════════════════════════════════════╗"
-    echo "║        Mirza Pro - CLI Manager        ║"
-    echo "║         Bot Management Panel          ║"
-    echo "╚════════════════════════════════════════╝"
-    echo -e "${NC}"
-    echo ""
-}
+as_root() { if [ "$EUID" -ne 0 ]; then echo -e "${RED}Run as root: sudo mirza ...${NC}"; exit 1; fi; }
+ensure_install_dir() { [ -f "$INSTALL_DIR/index.php" ] || INSTALL_DIR="/var/www/mirza_pro_latest"; }
 
-# Get bot status
-get_bot_status() {
-    if supervisorctl status mirza_pro_bot | grep -q "RUNNING"; then
-        echo -e "${GREEN}● RUNNING${NC}"
-    else
-        echo -e "${RED}● STOPPED${NC}"
-    fi
-}
-
-# Show main menu
-show_menu() {
-    print_header
-    
-    printf "\033[0;34mBot Status:\033[0m $(get_bot_status)\n"
-    echo ""
-    printf "\033[1;33m═══════════════════════════════════════\033[0m\n"
-    echo ""
-    printf "  \033[0;36m1.\033[0m Start Bot\n"
-    printf "  \033[0;36m2.\033[0m Stop Bot\n"
-    printf "  \033[0;36m3.\033[0m Restart Bot\n"
-    printf "  \033[0;36m4.\033[0m View Bot Status\n"
-    printf "  \033[0;36m5.\033[0m View Live Logs\n"
-    printf "  \033[0;36m6.\033[0m View Last 50 Lines of Log\n"
-    echo ""
-    printf "\033[1;33m───────────────────────────────────────\033[0m\n"
-    echo ""
-    printf "  \033[0;36m7.\033[0m Database Info\n"
-    printf "  \033[0;36m8.\033[0m Backup Database\n"
-    printf "  \033[0;36m9.\033[0m View System Info\n"
-    echo ""
-    printf "\033[1;33m───────────────────────────────────────\033[0m\n"
-    echo ""
-    printf "  \033[0;36m10.\033[0m Update Bot (from GitHub)\n"
-    printf "  \033[0;36m11.\033[0m Edit Configuration\n"
-    printf "  \033[0;36m12.\033[0m Open Web Panel URL\n"
-    printf "  \033[0;36m13.\033[0m Re-run Setup Wizard\n"
-    printf "  \033[0;36m14.\033[0m Uninstall (keep database)\n"
-    printf "  \033[0;36m15.\033[0m Uninstall and Purge Database (DANGEROUS)\n"
-    echo ""
-    printf "\033[1;33m───────────────────────────────────────\033[0m\n"
-    echo ""
-    printf "  \033[0;31m0.\033[0m Exit\n"
-    echo ""
-    printf "\033[1;33m═══════════════════════════════════════\033[0m\n"
-    echo ""
-    printf "Select option: "
-}
-
-# Start bot
-start_bot() {
-    echo -e "${YELLOW}Starting bot...${NC}"
-    supervisorctl start mirza_pro_bot
-    sleep 2
-    echo -e "${GREEN}✓ Bot started${NC}"
-    read -p "Press Enter to continue..."
-}
-
-# Stop bot
-stop_bot() {
-    echo -e "${YELLOW}Stopping bot...${NC}"
-    supervisorctl stop mirza_pro_bot
-    sleep 2
-    echo -e "${GREEN}✓ Bot stopped${NC}"
-    read -p "Press Enter to continue..."
-}
-
-# Restart bot
-restart_bot() {
-    echo -e "${YELLOW}Restarting bot...${NC}"
-    supervisorctl restart mirza_pro_bot
-    sleep 2
-    echo -e "${GREEN}✓ Bot restarted${NC}"
-    read -p "Press Enter to continue..."
-}
-
-# View status
-view_status() {
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo -e "${BLUE}Bot Process Status${NC}"
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    supervisorctl status mirza_pro_bot
-    echo ""
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo ""
-    read -p "Press Enter to continue..."
-}
-
-# View live logs
-view_live_logs() {
-    echo -e "${YELLOW}Showing live logs (Ctrl+C to exit)...${NC}"
-    echo ""
-    sleep 2
-    tail -f "$LOG_FILE"
-}
-
-# View last logs
-view_last_logs() {
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo -e "${BLUE}Last 50 Lines of Log${NC}"
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    tail -n 50 "$LOG_FILE"
-    echo ""
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo ""
-    read -p "Press Enter to continue..."
-}
-
-# Database info
-database_info() {
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo -e "${BLUE}Database Information${NC}"
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    
-    if [ -f /root/.mirza_db_credentials ]; then
-        source /root/.mirza_db_credentials
-        echo -e "${GREEN}Database Name:${NC} $DB_NAME"
-        echo -e "${GREEN}Database User:${NC} $DB_USER"
-        echo -e "${GREEN}Password File:${NC} /root/.mirza_db_credentials"
-        echo ""
-        
-        # Show database size
-        MYSQL_ROOT_PASSWORD=$(cat /root/.mysql_root_password 2>/dev/null)
-        if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
-            DB_SIZE=$(mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)' FROM information_schema.TABLES WHERE table_schema = '$DB_NAME';" 2>/dev/null | tail -n 1)
-            echo -e "${GREEN}Database Size:${NC} ${DB_SIZE} MB"
-        fi
-    else
-        echo -e "${RED}No database credentials found${NC}"
-    fi
-    
-    echo ""
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo ""
-    read -p "Press Enter to continue..."
-}
-
-# Backup database
-backup_database() {
-    echo -e "${YELLOW}Creating database backup...${NC}"
-    
-    if [ -f /root/.mirza_db_credentials ]; then
-        source /root/.mirza_db_credentials
-        MYSQL_ROOT_PASSWORD=$(cat /root/.mysql_root_password 2>/dev/null)
-        
-        BACKUP_DIR="$INSTALL_DIR/backups"
-        mkdir -p "$BACKUP_DIR"
-        
-        BACKUP_FILE="$BACKUP_DIR/mirza_pro_$(date +%Y%m%d_%H%M%S).sql"
-        
-        if mysqldump -uroot -p"${MYSQL_ROOT_PASSWORD}" "$DB_NAME" > "$BACKUP_FILE" 2>/dev/null; then
-            gzip "$BACKUP_FILE"
-            echo -e "${GREEN}✓ Backup created: ${BACKUP_FILE}.gz${NC}"
-            echo -e "${BLUE}Size: $(du -h "${BACKUP_FILE}.gz" | cut -f1)${NC}"
-        else
-            echo -e "${RED}✗ Backup failed${NC}"
-        fi
-    else
-        echo -e "${RED}No database credentials found${NC}"
-    fi
-    
-    echo ""
-    read -p "Press Enter to continue..."
-}
-
-# System info
-system_info() {
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo -e "${BLUE}System Information${NC}"
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    
-    echo -e "${GREEN}OS:${NC} $(lsb_release -d | cut -f2)"
-    echo -e "${GREEN}Kernel:${NC} $(uname -r)"
-    echo -e "${GREEN}Uptime:${NC} $(uptime -p)"
-    echo ""
-    echo -e "${GREEN}CPU Usage:${NC}"
-    top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print "  " 100 - $1"%"}'
-    echo ""
-    echo -e "${GREEN}Memory Usage:${NC}"
-    free -h | awk '/^Mem:/ {print "  Used: " $3 " / Total: " $2}'
-    echo ""
-    echo -e "${GREEN}Disk Usage:${NC}"
-    df -h / | awk 'NR==2 {print "  Used: " $3 " / Total: " $2 " (" $5 ")"}'
-    echo ""
-    echo -e "${GREEN}Install Directory:${NC} $INSTALL_DIR"
-    echo -e "${GREEN}Log File:${NC} $LOG_FILE"
-    
-    echo ""
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo ""
-    read -p "Press Enter to continue..."
-}
-
-# Update bot (interactive)
-update_bot() {
-    echo -e "${YELLOW}Updating bot from GitHub...${NC}"
-    echo ""
-    
-    # Stop bot
-    echo "Stopping bot..."
-    supervisorctl stop mirza_pro_bot
-    
-    # Backup current version
-    echo "Creating backup..."
-    BACKUP_DIR="/root/mirza_backups"
-    mkdir -p "$BACKUP_DIR"
-    tar -czf "$BACKUP_DIR/mirza_pro_backup_$(date +%Y%m%d_%H%M%S).tar.gz" "$INSTALL_DIR" 2>/dev/null
-    
-    # Pull updates
-    echo "Pulling updates..."
-    cd "$INSTALL_DIR"
-    git pull origin main
-    
-    # Restart bot
-    echo "Starting bot..."
-    supervisorctl start mirza_pro_bot
-    
-    echo ""
-    echo -e "${GREEN}✓ Update complete${NC}"
-    echo ""
-    read -p "Press Enter to continue..."
-}
-
-# Non-interactive subcommands
-case "${1:-interactive}" in
-  status|start|stop|restart|logs)
-    # Delegate to simpler CLI if needed
-    ;;
-  update)
-    echo "Updating (non-interactive)";
-    supervisorctl stop mirza_pro_bot || true;
-    git -C "$INSTALL_DIR" fetch --all && git -C "$INSTALL_DIR" reset --hard origin/main;
-    chown -R www-data:www-data "$INSTALL_DIR";
-    systemctl restart php8.2-fpm nginx || true;
-    supervisorctl reread && supervisorctl update && supervisorctl start mirza_pro_bot || true;
-    exit 0;;
-  uninstall)
-    shift || true;
-    echo "Uninstalling (non-interactive)";
-    supervisorctl stop mirza_pro_bot || true;
-    rm -f /etc/supervisor/conf.d/mirza_bot.conf && supervisorctl reread && supervisorctl update || true;
-    rm -f /etc/nginx/sites-enabled/mirza_pro /etc/nginx/sites-available/mirza_pro && nginx -t && systemctl reload nginx || true;
-    rm -rf "$INSTALL_DIR";
-    if [ "${1:-}" = "--purge-db" ] && [ -f /var/www/mirza_pro/config.php ]; then
-      DBNAME=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($dbname)?$dbname:"";');
-      USER=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($usernamedb)?$usernamedb:"";');
-      if [ -n "$DBNAME" ]; then mysql -e "DROP DATABASE IF EXISTS \`$DBNAME\`;" || true; mysql -e "DROP USER IF EXISTS '$USER'@'localhost'; FLUSH PRIVILEGES;" || true; fi;
-    fi;
-    echo "Done."; exit 0;;
-  setup)
-    touch "$INSTALL_DIR/webpanel/.needs_setup"; systemctl restart php8.2-fpm nginx; echo "Setup flag created"; exit 0;;
-  interactive) ;; # fall through
-  *) ;;
- esac
-
-# Edit configuration
-edit_config() {
-    echo -e "${YELLOW}Opening configuration file...${NC}"
-    echo ""
-    
-    if [ -f "$INSTALL_DIR/config.php" ]; then
-        nano "$INSTALL_DIR/config.php"
-        
-        echo ""
-        echo -e "${YELLOW}Restart bot to apply changes? [y/N]:${NC} "
-        read -r REPLY
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            supervisorctl restart mirza_pro_bot
-            echo -e "${GREEN}✓ Bot restarted${NC}"
-        fi
-    else
-        echo -e "${RED}Configuration file not found${NC}"
-        read -p "Press Enter to continue..."
-    fi
-}
-
-# Open web panel
-open_web_panel() {
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo -e "${BLUE}Web Panel Access${NC}"
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    
-    SERVER_IP=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
-    
-    # Get HTTP port from Nginx config
-    HTTP_PORT=$(grep -oP 'listen \K[0-9]+' /etc/nginx/sites-available/mirza_pro 2>/dev/null | head -1 || echo "80")
-    
-    if [ "$HTTP_PORT" = "80" ]; then
-        WEB_URL="http://${SERVER_IP}/webpanel/"
-    else
-        WEB_URL="http://${SERVER_IP}:${HTTP_PORT}/webpanel/"
-    fi
-    
-    echo ""
-    echo -e "${GREEN}Web Panel URL:${NC}"
-    echo -e "${CYAN}${WEB_URL}${NC}"
-    echo ""
-    echo -e "${YELLOW}Copy this URL to your browser${NC}"
-    echo ""
-    echo -e "${CYAN}════════════════════════════════════════${NC}"
-    echo ""
-    read -p "Press Enter to continue..."
-}
-
-# Re-run setup wizard
-rerun_setup() {
-  echo -e "${YELLOW}Re-running setup wizard...${NC}"
-  touch "$INSTALL_DIR/webpanel/.needs_setup"
-  systemctl restart php8.2-fpm nginx
-  echo -e "${GREEN}✓ Setup flag created. Open the web panel to continue.${NC}"
-  read -p "Press Enter to continue..."
-}
-
-# Uninstall keep DB
-uninstall_keep() {
-  echo -e "${RED}This will stop the bot, remove app files and Nginx/Supervisor entries, but keep the database.${NC}"
-  read -p "Type 'yes' to continue: " ans
-  if [ "$ans" != "yes" ]; then echo "Cancelled"; read -p "Enter..."; return; fi
-  supervisorctl stop mirza_pro_bot || true
-  rm -f /etc/supervisor/conf.d/mirza_bot.conf && supervisorctl reread && supervisorctl update || true
-  rm -f /etc/nginx/sites-enabled/mirza_pro /etc/nginx/sites-available/mirza_pro && nginx -t && systemctl reload nginx || true
-  rm -rf "$INSTALL_DIR"
-  echo -e "${GREEN}✓ Uninstall complete (database kept).${NC}"
-  read -p "Press Enter to continue..."
-}
-
-# Uninstall purge DB
-uninstall_purge() {
-  echo -e "${RED}DANGEROUS: This will also DROP the application database and user.${NC}"
-  read -p "Type 'PURGE' to proceed: " ans
-  if [ "$ans" != "PURGE" ]; then echo "Cancelled"; read -p "Enter..."; return; fi
-  DBNAME=""; USER=""
-  if [ -f "$INSTALL_DIR/config.php" ]; then
-    DBNAME=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($dbname)?$dbname:"";')
-    USER=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($usernamedb)?$usernamedb:"";')
+# DB helpers
+DB_NAME=""; DB_USER=""; DB_PASSWORD=""
+load_db_creds() {
+  if [ -f /root/.mirza_db_credentials ]; then . /root/.mirza_db_credentials || true; fi
+  if [ -z "${DB_NAME:-}" ] && [ -f "$INSTALL_DIR/config.php" ]; then
+    DB_NAME=$(grep -Po "^\$dbname\s*=\s*'\K[^']+" "$INSTALL_DIR/config.php" | head -1 || true)
+    DB_USER=$(grep -Po "^\$usernamedb\s*=\s*'\K[^']+" "$INSTALL_DIR/config.php" | head -1 || true)
   fi
-  supervisorctl stop mirza_pro_bot || true
-  rm -f /etc/supervisor/conf.d/mirza_bot.conf && supervisorctl reread && supervisorctl update || true
-  rm -f /etc/nginx/sites-enabled/mirza_pro /etc/nginx/sites-available/mirza_pro && nginx -t && systemctl reload nginx || true
-  rm -rf "$INSTALL_DIR"
-  if [ -n "$DBNAME" ]; then
-    echo "Dropping DB $DBNAME and user $USER..."
-    mysql -e "DROP DATABASE IF EXISTS \`$DBNAME\`;" || true
-    mysql -e "DROP USER IF EXISTS '$USER'@'localhost'; FLUSH PRIVILEGES;" || true
+}
+mysql_exec() {
+  local sql="$1"
+  if [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
+    mysql -u"$DB_USER" -p"$DB_PASSWORD" -D "$DB_NAME" -e "$sql"; return $?
   fi
-  echo -e "${GREEN}✓ Uninstall + purge complete.${NC}"
-  read -p "Press Enter to continue..."
+  if [ -f /etc/mysql/debian.cnf ]; then
+    if [ -n "${DB_NAME:-}" ]; then mysql --defaults-file=/etc/mysql/debian.cnf -D "$DB_NAME" -e "$sql"; else mysql --defaults-file=/etc/mysql/debian.cnf -e "$sql"; fi; return $?
+  fi
+  echo "No MySQL credentials available"; return 1
 }
 
-# Main loop
+status() { supervisorctl status "$PROGRAM" || true; }
+start_bot() { supervisorctl reread || true; supervisorctl update || true; supervisorctl start "$PROGRAM" || true; status; }
+stop_bot() { supervisorctl stop "$PROGRAM" || true; status; }
+restart_bot() { supervisorctl restart "$PROGRAM" || true; status; }
+logs() { tail -n 200 -f "$LOG_FILE"; }
+
+reload_web() { nginx -t && systemctl reload nginx || systemctl restart nginx || true; systemctl reload "php${PHP_VERSION}-fpm" || systemctl restart "php${PHP_VERSION}-fpm" || true; }
+
+setup_flag() { touch "$INSTALL_DIR/webpanel/.needs_setup" && chown www-data:www-data "$INSTALL_DIR/webpanel/.needs_setup"; echo "Setup wizard ready: /webpanel/setup.php"; }
+
+update_code() {
+  ensure_install_dir
+  echo "Updating code in $INSTALL_DIR ..."
+  if [ -d "$INSTALL_DIR/.git" ]; then
+    git -C "$INSTALL_DIR" fetch --all --prune
+    git -C "$INSTALL_DIR" reset --hard origin/main || git -C "$INSTALL_DIR" pull --ff-only || true
+  fi
+  chown -R www-data:www-data "$INSTALL_DIR"
+  chmod -R 755 "$INSTALL_DIR"
+  supervisorctl reread || true; supervisorctl update || true
+  restart_bot || true
+  reload_web || true
+  echo "Update complete."
+}
+
+uninstall_keep_db() {
+  ensure_install_dir; stop_bot || true
+  rm -rf "$INSTALL_DIR"
+  rm -f /etc/supervisor/conf.d/mirza_bot.conf; supervisorctl reread || true; supervisorctl update || true
+  nginx -t && systemctl reload nginx || true
+  echo "Removed app files. Database preserved."
+}
+
+uninstall_purge_db() {
+  ensure_install_dir; load_db_creds; stop_bot || true
+  if [ -n "${DB_NAME:-}" ]; then mysql_exec "DROP DATABASE IF EXISTS \`$DB_NAME\`;" || true; fi
+  rm -rf "$INSTALL_DIR"
+  rm -f /etc/supervisor/conf.d/mirza_bot.conf; supervisorctl reread || true; supervisorctl update || true
+  nginx -t && systemctl reload nginx || true
+  echo "Removed app and dropped DB ${DB_NAME:-<unknown>}."
+}
+
+reset_admin() {
+  as_root; ensure_install_dir; load_db_creds
+  local new_user="" new_pass=""; while [[ $# -gt 0 ]]; do case "$1" in --username) new_user="$2"; shift 2;; --password) new_pass="$2"; shift 2;; *) shift;; esac; done
+  if [ -z "$new_user" ] && [ -z "$new_pass" ]; then read -rp "New admin username [admin]: " new_user; new_user=${new_user:-admin}; read -rsp "New admin password: " new_pass; echo; fi
+  [ -z "$new_user" ] && new_user="admin"; [ -z "$new_pass" ] && { echo "Password required"; exit 1; }
+  local HASH; HASH=$(php -r 'echo password_hash($argv[1], PASSWORD_BCRYPT);' "$new_pass")
+  local has_username has_password has_u_legacy has_p_legacy
+  has_username=$(mysql_exec "SHOW COLUMNS FROM admin LIKE 'username';" 2>/dev/null | wc -l || true)
+  has_password=$(mysql_exec "SHOW COLUMNS FROM admin LIKE 'password';" 2>/dev/null | wc -l || true)
+  has_u_legacy=$(mysql_exec "SHOW COLUMNS FROM admin LIKE 'username_admin';" 2>/dev/null | wc -l || true)
+  has_p_legacy=$(mysql_exec "SHOW COLUMNS FROM admin LIKE 'password_admin';" 2>/dev/null | wc -l || true)
+  mysql_exec "UPDATE admin SET \
+    $( [ "$has_username" -gt 0 ] && echo "username='${new_user}'," ) \
+    $( [ "$has_password" -gt 0 ] && echo "password='${HASH}'," ) \
+    $( [ "$has_u_legacy" -gt 0 ] && echo "username_admin='${new_user}'," ) \
+    $( [ "$has_p_legacy" -gt 0 ] && echo "password_admin='${new_pass}'," ) \
+    rule='administrator' WHERE id_admin=1 OR username='admin' OR username_admin='admin';" || true
+  mysql_exec "INSERT INTO admin \
+    ($( [ "$has_username" -gt 0 ] && echo "username," )$( [ "$has_password" -gt 0 ] && echo "password," )$( [ "$has_u_legacy" -gt 0 ] && echo "username_admin," )$( [ "$has_p_legacy" -gt 0 ] && echo "password_admin," )rule) \
+    VALUES ($( [ "$has_username" -gt 0 ] && echo "'${new_user}'," )$( [ "$has_password" -gt 0 ] && echo "'${HASH}'," )$( [ "$has_u_legacy" -gt 0 ] && echo "'${new_user}'," )$( [ "$has_p_legacy" -gt 0 ] && echo "'${new_pass}'," )'administrator')" || true
+  echo "Admin updated. Username: ${new_user}"
+}
+
+menu() {
+  as_root; ensure_install_dir
+  while true; do
+    clear; echo -e "${CYAN}==== Mirza Pro Manager ==== ${NC}"; echo ""
+    echo "1) Bot status"
+    echo "2) Start bot"
+    echo "3) Stop bot"
+    echo "4) Restart bot"
+    echo "5) Tail bot logs"
+    echo "6) Update (pull + restart bot + reload PHP/Nginx)"
+    echo "7) Re-run setup wizard"
+    echo "8) Uninstall (keep database)"
+    echo "9) Uninstall (purge database)"
+    echo "10) Reset admin username/password"
+    echo "11) Reload PHP-FPM and Nginx"
+    echo "0) Exit"
+    read -rp "Select: " opt
+    case "$opt" in
+      1) status; read -rp "Enter to continue..." _;;
+      2) start_bot; read -rp "Enter to continue..." _;;
+      3) stop_bot; read -rp "Enter to continue..." _;;
+      4) restart_bot; read -rp "Enter to continue..." _;;
+      5) logs;;
+      6) update_code; read -rp "Enter to continue..." _;;
+      7) setup_flag; read -rp "Enter to continue..." _;;
+      8) uninstall_keep_db; read -rp "Enter to continue..." _;;
+      9) uninstall_purge_db; read -rp "Enter to continue..." _;;
+      10) reset_admin; read -rp "Enter to continue..." _;;
+      11) reload_web; read -rp "Enter to continue..." _;;
+      0) exit 0;;
+      *) echo "Invalid"; sleep 1;;
+    esac
+  done
+}
+
+usage() { cat <<USAGE
+mirza - Mirza Pro CLI
+Usage: mirza <command> [args]
+  status|start|stop|restart|logs
+  update                  Pull latest, restart bot, reload PHP/Nginx
+  setup                   Re-run setup wizard
+  uninstall [--purge-db]  Remove app files (and optionally DB)
+  reset-admin [--username U] [--password P]
+  reload-web              Reload php-fpm and nginx
+  menu                    Open interactive menu (default)
+USAGE
+}
+
 main() {
-    check_root
-    
-    while true; do
-        show_menu
-        read -r choice
-        
-        case $choice in
-            1) start_bot ;;
-            2) stop_bot ;;
-            3) restart_bot ;;
-            4) view_status ;;
-            5) view_live_logs ;;
-            6) view_last_logs ;;
-            7) database_info ;;
-            8) backup_database ;;
-            9) system_info ;;
-            10) update_bot ;;
-            11) edit_config ;;
-            12) open_web_panel ;;
-            13) rerun_setup ;;
-            14) uninstall_keep ;;
-            15) uninstall_purge ;;
-            0) 
-                echo ""
-                echo -e "${GREEN}Goodbye!${NC}"
-                exit 0
-                ;;
-            *)
-                echo -e "${RED}Invalid option${NC}"
-                sleep 1
-                ;;
-        esac
-    done
+  ensure_install_dir; load_db_creds
+  local cmd=${1:-menu}; shift || true
+  case "$cmd" in
+    status) status;; start) start_bot;; stop) stop_bot;; restart) restart_bot;; logs) logs;;
+    update) update_code;; setup) setup_flag;; reload-web) reload_web;;
+    uninstall) if [ "${1:-}" = "--purge-db" ]; then uninstall_purge_db; else uninstall_keep_db; fi;;
+    reset-admin) reset_admin "$@";; menu|'') menu;; -h|--help|help) usage;;
+    *) echo "Unknown command: $cmd"; usage; exit 1;;
+  esac
 }
 
-# Run main
 main "$@"
