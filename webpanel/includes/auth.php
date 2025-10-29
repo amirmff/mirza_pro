@@ -11,31 +11,35 @@ class Auth {
     }
     
     public function login($username, $password) {
-        // Bot's admin table uses: id_admin, username, password, rule
-        $stmt = $this->pdo->prepare("SELECT * FROM admin WHERE username = :username LIMIT 1");
-        $stmt->bindParam(':username', $username, PDO::PARAM_STR);
+        // Support both normalized and legacy columns
+        $stmt = $this->pdo->prepare("SELECT id_admin, username, password, rule FROM admin WHERE username = :u LIMIT 1");
+        $stmt->bindParam(':u', $username, PDO::PARAM_STR);
         $stmt->execute();
         $admin = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        // Bot uses plain text passwords (as seen in table.php)
-        if ($admin && $admin['password'] === $password) {
+        if ($admin && password_verify($password, $admin['password'])) {
             $_SESSION['admin_id'] = $admin['id_admin'];
             $_SESSION['admin_username'] = $admin['username'];
             $_SESSION['admin_rule'] = $admin['rule'];
             $_SESSION['last_activity'] = time();
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-            
-            // Log login
             $this->logActivity($admin['id_admin'], 'login', 'Admin logged in');
-            
-            return [
-                'success' => true,
-                'admin' => [
-                    'id' => $admin['id_admin'],
-                    'username' => $admin['username'],
-                    'rule' => $admin['rule']
-                ]
-            ];
+            return ['success' => true, 'admin' => ['id' => $admin['id_admin'], 'username' => $admin['username'], 'rule' => $admin['rule']]];
+        }
+        
+        // Legacy fallback (username_admin/password_admin plain text)
+        $stmt = $this->pdo->prepare("SELECT id_admin, username_admin, password_admin, rule FROM admin WHERE username_admin = :u LIMIT 1");
+        $stmt->bindParam(':u', $username, PDO::PARAM_STR);
+        $stmt->execute();
+        $legacy = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($legacy && isset($legacy['password_admin']) && $legacy['password_admin'] === $password) {
+            $_SESSION['admin_id'] = $legacy['id_admin'];
+            $_SESSION['admin_username'] = $legacy['username_admin'];
+            $_SESSION['admin_rule'] = $legacy['rule'];
+            $_SESSION['last_activity'] = time();
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            $this->logActivity($legacy['id_admin'], 'login', 'Admin logged in (legacy)');
+            return ['success' => true, 'admin' => ['id' => $legacy['id_admin'], 'username' => $legacy['username_admin'], 'rule' => $legacy['rule']]];
         }
         
         return ['success' => false, 'error' => 'نام کاربری یا رمز عبور اشتباه است'];
@@ -108,11 +112,18 @@ class Auth {
             return null;
         }
         
-        // Use bot's admin table structure: id_admin, username, password, rule
+        // Prefer normalized columns, fallback to legacy
         $stmt = $this->pdo->prepare("SELECT id_admin, username, rule FROM admin WHERE id_admin = :id");
         $stmt->bindParam(':id', $_SESSION['admin_id'], PDO::PARAM_STR);
         $stmt->execute();
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            $stmt = $this->pdo->prepare("SELECT id_admin, username_admin AS username, rule FROM admin WHERE id_admin = :id");
+            $stmt->bindParam(':id', $_SESSION['admin_id'], PDO::PARAM_STR);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        }
+        return $row;
     }
     
     private function logActivity($admin_id, $action, $description) {
