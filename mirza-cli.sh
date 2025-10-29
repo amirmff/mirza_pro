@@ -1,8 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #########################################
 # Mirza Pro - CLI Management Tool
 # Interactive bot management interface
+# Also supports non-interactive subcommands
 #########################################
 
 # Colors
@@ -27,7 +28,7 @@ check_root() {
 
 # Print header
 print_header() {
-    clear
+    [ -t 1 ] && clear || true
     echo -e "${CYAN}"
     echo "╔════════════════════════════════════════╗"
     echo "║        Mirza Pro - CLI Manager        ║"
@@ -226,7 +227,7 @@ system_info() {
     read -p "Press Enter to continue..."
 }
 
-# Update bot
+# Update bot (interactive)
 update_bot() {
     echo -e "${YELLOW}Updating bot from GitHub...${NC}"
     echo ""
@@ -255,6 +256,38 @@ update_bot() {
     echo ""
     read -p "Press Enter to continue..."
 }
+
+# Non-interactive subcommands
+case "${1:-interactive}" in
+  status|start|stop|restart|logs)
+    # Delegate to simpler CLI if needed
+    ;;
+  update)
+    echo "Updating (non-interactive)";
+    supervisorctl stop mirza_pro_bot || true;
+    git -C "$INSTALL_DIR" fetch --all && git -C "$INSTALL_DIR" reset --hard origin/main;
+    chown -R www-data:www-data "$INSTALL_DIR";
+    systemctl restart php8.2-fpm nginx || true;
+    supervisorctl reread && supervisorctl update && supervisorctl start mirza_pro_bot || true;
+    exit 0;;
+  uninstall)
+    shift || true;
+    echo "Uninstalling (non-interactive)";
+    supervisorctl stop mirza_pro_bot || true;
+    rm -f /etc/supervisor/conf.d/mirza_bot.conf && supervisorctl reread && supervisorctl update || true;
+    rm -f /etc/nginx/sites-enabled/mirza_pro /etc/nginx/sites-available/mirza_pro && nginx -t && systemctl reload nginx || true;
+    rm -rf "$INSTALL_DIR";
+    if [ "${1:-}" = "--purge-db" ] && [ -f /var/www/mirza_pro/config.php ]; then
+      DBNAME=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($dbname)?$dbname:"";');
+      USER=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($usernamedb)?$usernamedb:"";');
+      if [ -n "$DBNAME" ]; then mysql -e "DROP DATABASE IF EXISTS \`$DBNAME\`;" || true; mysql -e "DROP USER IF EXISTS '$USER'@'localhost'; FLUSH PRIVILEGES;" || true; fi;
+    fi;
+    echo "Done."; exit 0;;
+  setup)
+    touch "$INSTALL_DIR/webpanel/.needs_setup"; systemctl restart php8.2-fpm nginx; echo "Setup flag created"; exit 0;;
+  interactive) ;; # fall through
+  *) ;;
+ esac
 
 # Edit configuration
 edit_config() {

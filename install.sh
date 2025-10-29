@@ -210,8 +210,11 @@ get_port_process() {
 }
 
 configure_ports() {
-    # Restore stdin if piped (for curl | bash execution)
-    if [ ! -t 0 ]; then
+    # Non-interactive mode support
+    NONINT=${INSTALL_NONINTERACTIVE:-0}
+    
+    # Restore stdin if piped (for curl | bash execution) unless non-interactive
+    if [ ! -t 0 ] && [ "$NONINT" = "0" ]; then
         exec < /dev/tty
     fi
     
@@ -227,47 +230,61 @@ configure_ports() {
     # Check HTTP port
     if check_port 80; then
         local process=$(get_port_process 80)
-        print_error "Port 80 is already in use by: $process"
-        echo -e "${YELLOW}You can:"
-        echo "  1. Stop the service using port 80"
-        echo "  2. Choose a different port for Mirza Pro"
-        echo -e "${NC}"
-        
-        read -p "Do you want to use a different HTTP port? [y/N]: " -r
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            while true; do
-                read -p "Enter HTTP port (e.g., 8080): " HTTP_PORT
-                if [[ $HTTP_PORT =~ ^[0-9]+$ ]] && [ $HTTP_PORT -ge 1024 ] && [ $HTTP_PORT -le 65535 ]; then
-                    if check_port $HTTP_PORT; then
-                        print_error "Port $HTTP_PORT is also in use. Try another."
-                    else
-                        print_success "Port $HTTP_PORT is available"
-                        break
-                    fi
-                else
-                    print_error "Invalid port. Use 1024-65535."
-                fi
-            done
+        # If nginx is using port 80, allow continue (we will add our site block)
+        if echo "$process" | grep -qi nginx; then
+            print_info "Port 80 in use by nginx — proceeding to configure site on port 80"
+            HTTP_PORT=80
         else
-            print_error "Cannot proceed without a free HTTP port."
-            echo "Please stop the service on port 80 and run installer again."
-            exit 1
+            if [ "$NONINT" = "1" ]; then
+                print_info "Port 80 in use by $process — switching to 8080 (non-interactive)"
+                HTTP_PORT=8080
+            else
+                print_error "Port 80 is already in use by: $process"
+                echo -e "${YELLOW}You can:"
+                echo "  1. Stop the service using port 80"
+                echo "  2. Choose a different port for Mirza Pro"
+                echo -e "${NC}"
+                read -p "Do you want to use a different HTTP port? [y/N]: " -r
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    while true; do
+                        read -p "Enter HTTP port (e.g., 8080): " HTTP_PORT
+                        if [[ $HTTP_PORT =~ ^[0-9]+$ ]] && [ $HTTP_PORT -ge 1024 ] && [ $HTTP_PORT -le 65535 ]; then
+                            if check_port $HTTP_PORT; then
+                                print_error "Port $HTTP_PORT is also in use. Try another."
+                            else
+                                print_success "Port $HTTP_PORT is available"
+                                break
+                            fi
+                        else
+                            print_error "Invalid port. Use 1024-65535."
+                        fi
+                    done
+                else
+                    print_error "Cannot proceed without a free HTTP port."
+                    echo "Please stop the service on port 80 and run installer again."
+                    exit 1
+                fi
+            fi
         fi
     else
         print_success "Port 80 is available for HTTP"
+        HTTP_PORT=80
     fi
     
-    # Check HTTPS port
+    # Check HTTPS port (optional)
     if check_port 443; then
         local process=$(get_port_process 443)
-        print_error "Port 443 is already in use by: $process"
-        echo -e "${YELLOW}Note: HTTPS will be configured later via the web panel${NC}"
-        
-        read -p "Enter HTTPS port (or press Enter to skip SSL for now): " HTTPS_PORT_INPUT
-        if [ ! -z "$HTTPS_PORT_INPUT" ]; then
-            HTTPS_PORT=$HTTPS_PORT_INPUT
+        if [ "$NONINT" = "1" ]; then
+            HTTPS_PORT=""  # skip SSL in non-interactive mode
         else
-            HTTPS_PORT=""
+            print_error "Port 443 is already in use by: $process"
+            echo -e "${YELLOW}Note: HTTPS will be configured later via the web panel${NC}"
+            read -p "Enter HTTPS port (or press Enter to skip SSL for now): " HTTPS_PORT_INPUT
+            if [ ! -z "$HTTPS_PORT_INPUT" ]; then
+                HTTPS_PORT=$HTTPS_PORT_INPUT
+            else
+                HTTPS_PORT=""
+            fi
         fi
     else
         print_success "Port 443 is available for HTTPS"
@@ -284,8 +301,10 @@ configure_ports() {
     echo "  SSH:   $SSH_PORT"
     echo ""
     
-    read -p "Press Enter to continue with these settings..." -r
-    echo ""
+    if [ "$NONINT" = "0" ]; then
+        read -p "Press Enter to continue with these settings..." -r
+        echo ""
+    fi
 }
 
 install_dependencies() {
