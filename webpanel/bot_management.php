@@ -136,33 +136,31 @@ if (isset($APIKEY)) {
     
     <!-- Control Buttons -->
     <div class="card">
-        <h3>کنترل ربات</h3>
+        <h3>کنترل ربات و وب‌هوک</h3>
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
             <?php if ($bot_status['running']): ?>
-                <button onclick="controlBot('stop')" class="btn btn-danger">
-                    ⏹️ توقف ربات
-                </button>
-                <button onclick="controlBot('restart')" class="btn btn-warning">
-                    🔄 راه‌اندازی مجدد
-                </button>
+                <button onclick="controlBot('stop')" class="btn btn-danger">⏹️ توقف ربات</button>
+                <button onclick="controlBot('restart')" class="btn btn-warning">🔄 راه‌اندازی مجدد</button>
             <?php else: ?>
-                <button onclick="controlBot('start')" class="btn btn-success">
-                    ▶️ شروع ربات
-                </button>
+                <button onclick="controlBot('start')" class="btn btn-success">▶️ شروع ربات</button>
             <?php endif; ?>
-            
-            <button onclick="updateWebhook()" class="btn btn-primary">
-                🔗 تنظیم مجدد Webhook
-            </button>
-            
-            <button onclick="showLogs()" class="btn btn-secondary">
-                📋 نمایش لاگ‌ها
-            </button>
-            
-            <button onclick="clearLogs()" class="btn btn-secondary">
-                🗑️ پاک کردن لاگ‌ها
-            </button>
+            <button onclick="updateWebhook()" class="btn btn-primary">🔗 تنظیم Webhook به /webhooks.php</button>
+            <button onclick="refreshWebhook()" class="btn btn-secondary">ℹ️ وضعیت Webhook</button>
+            <button onclick="showLogs()" class="btn btn-secondary">📋 نمایش لاگ‌ها</button>
+            <button onclick="clearLogs()" class="btn btn-secondary">🗑️ پاک کردن لاگ‌ها</button>
         </div>
+    </div>
+
+    <!-- Domain & SSL -->
+    <div class="card">
+        <h3>دامنه و SSL</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <input id="domain" class="form-control" style="min-width:260px" placeholder="example.com" value="<?php echo htmlspecialchars($domainhosts ?? ''); ?>">
+            <input id="email" class="form-control" style="min-width:260px" placeholder="admin@example.com">
+            <button class="btn btn-primary" onclick="applyDomain()">✅ اعمال دامنه (+اختیاری: صدور SSL)</button>
+            <button class="btn btn-secondary" onclick="renewSSL()">♻️ تمدید SSL</button>
+        </div>
+        <div id="ssl-info" style="margin-top:10px;color:#666;font-size:13px"></div>
     </div>
     
     <!-- Logs Viewer -->
@@ -210,28 +208,49 @@ function controlBot(action) {
 
 function updateWebhook() {
     showLoading();
-    
+    const domain = document.getElementById('domain')?.value || '';
     fetch('/webpanel/includes/bot_control.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `action=webhook&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `action=set_webhook&domain=${encodeURIComponent(domain)}&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
     })
-    .then(response => response.json())
-    .then(data => {
-        hideLoading();
-        if (data.success) {
-            showAlert('success', data.message);
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            showAlert('error', data.message);
-        }
-    })
-    .catch(error => {
-        hideLoading();
-        showAlert('error', 'خطا در برقراری ارتباط با سرور');
-    });
+    .then(r=>r.json()).then(data=>{ hideLoading();
+        if (data.success) { showAlert('success', data.message); setTimeout(()=>location.reload(),1200);} else { showAlert('error', data.message); }
+    }).catch(()=>{ hideLoading(); showAlert('error','خطا در ارتباط با سرور'); });
+}
+
+function refreshWebhook(){
+    fetch('/webpanel/includes/bot_control.php?action=get_webhook')
+      .then(r=>r.json()).then(d=>{
+        if (d.ok) {
+          showAlert('success', `Webhook: ${d.result.url || 'unset'} | pending: ${d.result.pending_update_count||0}`)
+        } else { showAlert('error','خطا در دریافت وضعیت وب‌هوک'); }
+      }).catch(()=>showAlert('error','خطا در ارتباط'));
+}
+
+function applyDomain(){
+    showLoading();
+    const domain = document.getElementById('domain').value.trim();
+    const email = document.getElementById('email').value.trim();
+    fetch('/webpanel/includes/bot_control.php', {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:`action=set_domain&domain=${encodeURIComponent(domain)}&email=${encodeURIComponent(email)}&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
+    }).then(r=>r.json()).then(d=>{ hideLoading();
+        if(d.success){ showAlert('success','دامنه اعمال شد'); updateWebhook(); }
+        else{ showAlert('error', d.message); }
+        if(d.details){ document.getElementById('ssl-info').textContent = d.details; }
+    }).catch(()=>{ hideLoading(); showAlert('error','خطا در ارتباط'); });
+}
+
+function renewSSL(){
+    showLoading();
+    fetch('/webpanel/includes/bot_control.php', {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:`action=renew_ssl&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
+    }).then(r=>r.json()).then(d=>{ hideLoading();
+        if(d.success){ showAlert('success','تمدید SSL اجرا شد'); }
+        else{ showAlert('error', d.message); }
+        if(d.details){ document.getElementById('ssl-info').textContent = d.details; }
+    }).catch(()=>{ hideLoading(); showAlert('error','خطا در ارتباط'); });
 }
 
 function showLogs() {
