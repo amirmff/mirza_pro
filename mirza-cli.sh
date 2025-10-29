@@ -85,34 +85,51 @@ reset_admin() {
   has_password=$(mysql_exec "SHOW COLUMNS FROM admin LIKE 'password';" 2>/dev/null | wc -l || true)
   has_u_legacy=$(mysql_exec "SHOW COLUMNS FROM admin LIKE 'username_admin';" 2>/dev/null | wc -l || true)
   has_p_legacy=$(mysql_exec "SHOW COLUMNS FROM admin LIKE 'password_admin';" 2>/dev/null | wc -l || true)
-  mysql_exec "UPDATE admin SET \
-    $( [ "$has_username" -gt 0 ] && echo "username='${new_user}'," ) \
-    $( [ "$has_password" -gt 0 ] && echo "password='${HASH}'," ) \
-    $( [ "$has_u_legacy" -gt 0 ] && echo "username_admin='${new_user}'," ) \
-    $( [ "$has_p_legacy" -gt 0 ] && echo "password_admin='${new_pass}'," ) \
-    rule='administrator' WHERE id_admin=1 OR username='admin' OR username_admin='admin';" || true
-  mysql_exec "INSERT INTO admin \
-    ($( [ "$has_username" -gt 0 ] && echo "username," )$( [ "$has_password" -gt 0 ] && echo "password," )$( [ "$has_u_legacy" -gt 0 ] && echo "username_admin," )$( [ "$has_p_legacy" -gt 0 ] && echo "password_admin," )rule) \
-    VALUES ($( [ "$has_username" -gt 0 ] && echo "'${new_user}'," )$( [ "$has_password" -gt 0 ] && echo "'${HASH}'," )$( [ "$has_u_legacy" -gt 0 ] && echo "'${new_user}'," )$( [ "$has_p_legacy" -gt 0 ] && echo "'${new_pass}'," )'administrator')" || true
+  # Detect existing row for this username to avoid duplicate key errors
+  local admin_id
+  admin_id=$(mysql_exec "SELECT id_admin FROM admin WHERE username='${new_user}' OR username_admin='${new_user}' ORDER BY id_admin ASC LIMIT 1;" 2>/dev/null | tail -n +2 | tr -d ' \t\r\n')
+  if [ -n "$admin_id" ]; then
+    mysql_exec "UPDATE admin SET \
+      $( [ "$has_username" -gt 0 ] && echo "username='${new_user}'," ) \
+      $( [ "$has_password" -gt 0 ] && echo "password='${HASH}'," ) \
+      $( [ "$has_u_legacy" -gt 0 ] && echo "username_admin='${new_user}'," ) \
+      $( [ "$has_p_legacy" -gt 0 ] && echo "password_admin='${new_pass}'," ) \
+      rule='administrator' WHERE id_admin=${admin_id};" || true
+  else
+    mysql_exec "INSERT INTO admin \
+      ($( [ "$has_username" -gt 0 ] && echo "username," )$( [ "$has_password" -gt 0 ] && echo "password," )$( [ "$has_u_legacy" -gt 0 ] && echo "username_admin," )$( [ "$has_p_legacy" -gt 0 ] && echo "password_admin," )rule) \
+      VALUES ($( [ "$has_username" -gt 0 ] && echo "'${new_user}'," )$( [ "$has_password" -gt 0 ] && echo "'${HASH}'," )$( [ "$has_u_legacy" -gt 0 ] && echo "'${new_user}'," )$( [ "$has_p_legacy" -gt 0 ] && echo "'${new_pass}'," )'administrator');" || true
+  fi
   echo "Admin updated. Username: ${new_user}"
 }
 
 menu() {
   as_root; ensure_install_dir
   while true; do
-    clear; echo -e "${CYAN}==== Mirza Pro Manager ==== ${NC}"; echo ""
-    echo "1) Bot status"
-    echo "2) Start bot"
-    echo "3) Stop bot"
-    echo "4) Restart bot"
-    echo "5) Tail bot logs"
-    echo "6) Update (pull + restart bot + reload PHP/Nginx)"
-    echo "7) Re-run setup wizard"
-    echo "8) Uninstall (keep database)"
-    echo "9) Uninstall (purge database)"
-    echo "10) Reset admin username/password"
-    echo "11) Reload PHP-FPM and Nginx"
-    echo "0) Exit"
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║           Mirza Pro - Manager          ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+    echo ""
+    printf "${BLUE}Bot:${NC} "; status | sed 's/^/  /'
+    http_port=$(grep -oP 'listen \K[0-9]+' /etc/nginx/sites-available/mirza_pro 2>/dev/null | head -1 || echo 80)
+    srv_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    echo -e "${BLUE}URL:${NC} http://${srv_ip}${http_port:+:$http_port}/webpanel/"
+    echo ""
+    echo -e "${YELLOW}── Actions ─────────────────────────────${NC}"
+    echo "  1) View bot status"
+    echo "  2) Start bot"
+    echo "  3) Stop bot"
+    echo "  4) Restart bot"
+    echo "  5) Tail bot logs"
+    echo "  6) Update (pull + restart bot + reload PHP/Nginx)"
+    echo "  7) Re-run setup wizard"
+    echo "  8) Uninstall (keep database)"
+    echo "  9) Uninstall (purge database)"
+    echo " 10) Reset admin username/password"
+    echo " 11) Reload PHP-FPM and Nginx"
+    echo "  0) Exit"
+    echo ""
     read -rp "Select: " opt
     case "$opt" in
       1) status; read -rp "Enter to continue..." _;;
