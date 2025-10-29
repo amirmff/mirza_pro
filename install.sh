@@ -18,6 +18,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 INSTALL_DIR="/var/www/mirza_pro"
+REPO_URL="https://github.com/amirmff/mirza_pro.git"
 LOG_FILE="/var/log/mirza_pro_install.log"
 PHP_VERSION="8.2"
 
@@ -517,28 +518,53 @@ EOF
 }
 
 copy_files() {
-    print_info "Cloning Mirza Pro from GitHub"
-    
-    # Remove old directory if exists
-    rm -rf "$INSTALL_DIR"
-    
-    # Clone from GitHub
-    run_with_spinner "Downloading latest version" \
-        "git clone -q https://github.com/amirmff/mirza_pro.git $INSTALL_DIR"
-    
+    print_info "Preparing application files"
+
+    # Ensure parent dir exists
+    mkdir -p "$(dirname "$INSTALL_DIR")"
+
+    # If running inside the target directory, do not delete it
+    if [ "$PWD" = "$INSTALL_DIR" ]; then
+        print_info "Installer is running from $INSTALL_DIR — performing in-place update"
+        if [ -d "$INSTALL_DIR/.git" ]; then
+            run_with_spinner "Updating existing repository" \
+                "git -C $INSTALL_DIR pull --ff-only || true"
+        else
+            print_info "No git metadata found; keeping current files"
+        fi
+    else
+        # If target exists and is a git repo, update; otherwise clone fresh with retries
+        if [ -d "$INSTALL_DIR/.git" ]; then
+            run_with_spinner "Updating existing repository" \
+                "git -C $INSTALL_DIR pull --ff-only || true"
+        else
+            # Clone with retries
+            ATTEMPTS=0
+            until [ $ATTEMPTS -ge 3 ]
+            do
+                ATTEMPTS=$((ATTEMPTS+1))
+                run_with_spinner "Downloading latest version (attempt $ATTEMPTS)" \
+                    "git clone -q $REPO_URL $INSTALL_DIR" && break
+                sleep 2
+            done
+        fi
+    fi
+
+    # Verify code exists
+    if [ ! -f "$INSTALL_DIR/index.php" ]; then
+        print_error "Application files not present at $INSTALL_DIR (clone/update failed). Aborting."
+        exit 1
+    fi
+
     # Create necessary directories
-    mkdir -p "$INSTALL_DIR/logs"
-    mkdir -p "$INSTALL_DIR/backups"
-    mkdir -p "$INSTALL_DIR/webpanel/assets"
-    
+    mkdir -p "$INSTALL_DIR/logs" "$INSTALL_DIR/backups" "$INSTALL_DIR/webpanel/assets"
+
     # Set permissions
     print_info "Setting file permissions"
     chown -R www-data:www-data "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
-    chmod -R 775 "$INSTALL_DIR/logs"
-    chmod -R 775 "$INSTALL_DIR/backups"
-    chmod -R 775 "$INSTALL_DIR/webpanel/assets"
-    print_success "Files installed"
+    chmod -R 775 "$INSTALL_DIR/logs" "$INSTALL_DIR/backups" "$INSTALL_DIR/webpanel/assets"
+    print_success "Files ready"
     update_progress
 }
 
@@ -621,21 +647,25 @@ NGINX_EOF
 
 setup_supervisor() {
     print_info "Setting up Supervisor for bot process management"
-    
-    cat > /etc/supervisor/conf.d/mirza_pro.conf <<EOF
-[program:mirza_pro_bot]
-command=/usr/bin/php $INSTALL_DIR/bot_daemon.php
+
+    # Ensure supervisor service is running
+    systemctl enable --now supervisor >/dev/null 2>&1 || true
+
+    cat > /etc/supervisor/conf.d/mirza_bot.conf <<EOF
+[program:mirza_bot]
+command=/usr/bin/php $INSTALL_DIR/index.php
 directory=$INSTALL_DIR
 autostart=true
 autorestart=true
 user=www-data
 redirect_stderr=true
-stdout_logfile=/var/log/mirza_pro_bot.log
-stopwaitsecs=3600
+stdout_logfile=/var/log/mirza_bot.log
+stopwaitsecs=10
+startretries=3
 EOF
-    
+
     run_with_spinner "Configuring and starting Supervisor" \
-        "supervisorctl reread && supervisorctl update"
+        "supervisorctl reread && supervisorctl update && supervisorctl start mirza_bot || true"
 }
 
 setup_firewall() {
@@ -746,9 +776,11 @@ EOF
         chmod 600 "$INSTALL_DIR/webpanel/.db_credentials.json"
     fi
     
-    # Ensure config.php has correct permissions
-    chown www-data:www-data "$INSTALL_DIR/config.php"
-    chmod 640 "$INSTALL_DIR/config.php"
+    # Ensure config.php has correct permissions if present
+    if [ -f "$INSTALL_DIR/config.php" ]; then
+        chown www-data:www-data "$INSTALL_DIR/config.php"
+        chmod 640 "$INSTALL_DIR/config.php"
+    fi
     
     print_success "Config file ready for setup wizard"
     update_progress
@@ -757,11 +789,13 @@ EOF
 install_cli_tool() {
     print_info "Installing CLI management tool"
     
-    # Copy CLI tool to /usr/local/bin
-    cp "$INSTALL_DIR/mirza-cli.sh" /usr/local/bin/mirza
-    chmod +x /usr/local/bin/mirza
-    
-    print_success "CLI tool installed: Run 'mirza' to manage bot"
+    if [ -f "$INSTALL_DIR/mirza-cli.sh" ]; then
+        cp "$INSTALL_DIR/mirza-cli.sh" /usr/local/bin/mirza
+        chmod +x /usr/local/bin/mirza
+        print_success "CLI tool installed: Run 'mirza' to manage bot"
+    else
+        print_info "CLI tool not found, skipping"
+    fi
     update_progress
 }
 
