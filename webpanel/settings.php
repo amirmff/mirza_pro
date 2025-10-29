@@ -9,9 +9,14 @@ if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(
 
 require_once __DIR__ . '/../config.php';
 
-// Get bot settings
-$settings_stmt = $pdo->query("SELECT * FROM setting LIMIT 1");
-$settings = $settings_stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+// Get bot settings (tolerate missing table)
+try {
+    $settings_stmt = $pdo->query("SELECT * FROM setting LIMIT 1");
+    $settings = $settings_stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+    error_log('settings.php load error: ' . $e->getMessage());
+    $settings = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
