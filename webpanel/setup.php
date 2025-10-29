@@ -94,6 +94,8 @@ PHP;
             ];
             $config_content = strtr($template, $repl);
             file_put_contents(__DIR__ . '/../config.php', $config_content);
+            // Persist bot token for future updates fallback
+            @file_put_contents(__DIR__ . '/.bot_token', $_SESSION['bot_token']);
             
             // Connect to database
             $pdo = new PDO(

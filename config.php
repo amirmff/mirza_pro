@@ -86,6 +86,21 @@ $adminnumber = '{admin_number}';
 $domainhosts = '{domain_name}';
 $usernamebot = '{username_bot}';
 
+// Fallback for bot token if placeholder
+if ($APIKEY === '{API_KEY}') {
+    // 1) From env
+    $envToken = getenv('MIRZA_BOT_TOKEN');
+    if ($envToken) { $APIKEY = $envToken; }
+    // 2) From webpanel token file
+    if ($APIKEY === '{API_KEY}') {
+        $token_file = __DIR__ . '/webpanel/.bot_token';
+        if (is_readable($token_file)) {
+            $tk = trim(@file_get_contents($token_file));
+            if ($tk !== '') { $APIKEY = $tk; }
+        }
+    }
+}
+
 // Check if bot token is configured
 if ($APIKEY === '{API_KEY}') {
     if (file_exists($needs_setup_file)) {
