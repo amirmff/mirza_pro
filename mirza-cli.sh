@@ -73,6 +73,9 @@ show_menu() {
     printf "  \033[0;36m10.\033[0m Update Bot (from GitHub)\n"
     printf "  \033[0;36m11.\033[0m Edit Configuration\n"
     printf "  \033[0;36m12.\033[0m Open Web Panel URL\n"
+    printf "  \033[0;36m13.\033[0m Re-run Setup Wizard\n"
+    printf "  \033[0;36m14.\033[0m Uninstall (keep database)\n"
+    printf "  \033[0;36m15.\033[0m Uninstall and Purge Database (DANGEROUS)\n"
     echo ""
     printf "\033[1;33m───────────────────────────────────────\033[0m\n"
     echo ""
@@ -338,6 +341,51 @@ open_web_panel() {
     read -p "Press Enter to continue..."
 }
 
+# Re-run setup wizard
+rerun_setup() {
+  echo -e "${YELLOW}Re-running setup wizard...${NC}"
+  touch "$INSTALL_DIR/webpanel/.needs_setup"
+  systemctl restart php8.2-fpm nginx
+  echo -e "${GREEN}✓ Setup flag created. Open the web panel to continue.${NC}"
+  read -p "Press Enter to continue..."
+}
+
+# Uninstall keep DB
+uninstall_keep() {
+  echo -e "${RED}This will stop the bot, remove app files and Nginx/Supervisor entries, but keep the database.${NC}"
+  read -p "Type 'yes' to continue: " ans
+  if [ "$ans" != "yes" ]; then echo "Cancelled"; read -p "Enter..."; return; fi
+  supervisorctl stop mirza_pro_bot || true
+  rm -f /etc/supervisor/conf.d/mirza_bot.conf && supervisorctl reread && supervisorctl update || true
+  rm -f /etc/nginx/sites-enabled/mirza_pro /etc/nginx/sites-available/mirza_pro && nginx -t && systemctl reload nginx || true
+  rm -rf "$INSTALL_DIR"
+  echo -e "${GREEN}✓ Uninstall complete (database kept).${NC}"
+  read -p "Press Enter to continue..."
+}
+
+# Uninstall purge DB
+uninstall_purge() {
+  echo -e "${RED}DANGEROUS: This will also DROP the application database and user.${NC}"
+  read -p "Type 'PURGE' to proceed: " ans
+  if [ "$ans" != "PURGE" ]; then echo "Cancelled"; read -p "Enter..."; return; fi
+  DBNAME=""; USER=""
+  if [ -f "$INSTALL_DIR/config.php" ]; then
+    DBNAME=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($dbname)?$dbname:"";')
+    USER=$(php -r 'include "/var/www/mirza_pro/config.php"; echo isset($usernamedb)?$usernamedb:"";')
+  fi
+  supervisorctl stop mirza_pro_bot || true
+  rm -f /etc/supervisor/conf.d/mirza_bot.conf && supervisorctl reread && supervisorctl update || true
+  rm -f /etc/nginx/sites-enabled/mirza_pro /etc/nginx/sites-available/mirza_pro && nginx -t && systemctl reload nginx || true
+  rm -rf "$INSTALL_DIR"
+  if [ -n "$DBNAME" ]; then
+    echo "Dropping DB $DBNAME and user $USER..."
+    mysql -e "DROP DATABASE IF EXISTS \`$DBNAME\`;" || true
+    mysql -e "DROP USER IF EXISTS '$USER'@'localhost'; FLUSH PRIVILEGES;" || true
+  fi
+  echo -e "${GREEN}✓ Uninstall + purge complete.${NC}"
+  read -p "Press Enter to continue..."
+}
+
 # Main loop
 main() {
     check_root
@@ -359,6 +407,9 @@ main() {
             10) update_bot ;;
             11) edit_config ;;
             12) open_web_panel ;;
+            13) rerun_setup ;;
+            14) uninstall_keep ;;
+            15) uninstall_purge ;;
             0) 
                 echo ""
                 echo -e "${GREEN}Goodbye!${NC}"
