@@ -7,8 +7,14 @@ $auth->requireLogin();
 $admin = $auth->getCurrentAdmin();
 if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
+$csrf_token = $auth->getCsrfToken();
+
 // Handle payment approval/rejection using bot_core functions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if (!$auth->verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        http_response_code(400);
+        exit('Invalid CSRF token');
+    }
     $payment_id = $_POST['payment_id'] ?? 0;
     $action = $_POST['action'];
     $note = $_POST['note'] ?? '';
@@ -130,7 +136,8 @@ $total = (int)$total_stmt->fetch(PDO::FETCH_ASSOC)['total'];
                                     <td>
                                         <?php if ($payment['payment_Status'] === 'pending'): ?>
                                             <form method="POST" style="display:inline;">
-                                                <input type="hidden" name="payment_id" value="<?php echo $payment['id_payment']; ?>">
+                                                <input type="hidden" name="payment_id" value="<?php echo $payment['id']; ?>">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>">
                                                 <button type="submit" name="action" value="approve" class="btn-sm success">تایید</button>
                                                 <button type="submit" name="action" value="reject" class="btn-sm danger">رد</button>
                                             </form>

@@ -14,6 +14,33 @@ require_once __DIR__ . '/../../keyboard.php';
 // Initialize ManagePanel for VPN operations
 $ManagePanel = new ManagePanel();
 
+/** Ensure notifications tables exist */
+(function ensureNotificationsTables(){
+    global $pdo;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS notifications_channels (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            category VARCHAR(64) NOT NULL,
+            chat_id BIGINT NOT NULL,
+            topic_id BIGINT NULL,
+            enabled TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_cat_chat (category, chat_id, COALESCE(topic_id,0))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS notifications_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            category VARCHAR(64) NOT NULL,
+            chat_id BIGINT NULL,
+            topic_id BIGINT NULL,
+            status VARCHAR(16) NOT NULL,
+            error TEXT NULL,
+            text TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_cat_created (category, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Exception $e) { error_log('ensureNotificationsTables: '.$e->getMessage()); }
+})();
+
 /**
  * Get bot settings
  */
@@ -49,6 +76,43 @@ function sendTelegramMessage($user_id, $message, $keyboard = null, $parse_mode =
         $keyboard = json_encode($keyboard);
     }
     return sendmessage($user_id, $message, $keyboard, $parse_mode);
+}
+
+/** Send to arbitrary chat (channel/group) optionally forum topic */
+function sendTelegramToChat($chat_id, $text, $topic_id = null, $parse_mode = 'HTML') {
+    $params = [ 'chat_id' => $chat_id, 'text' => $text, 'parse_mode' => $parse_mode ];
+    if (!empty($topic_id)) { $params['message_thread_id'] = (int)$topic_id; }
+    $res = telegram('sendmessage', $params);
+    return is_array($res) ? ($res['ok'] ?? false) : (bool)$res;
+}
+
+/** Category-based notifier; logs each attempt */
+function sendNotification($category, $text, $parse_mode = 'HTML') {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT chat_id, topic_id FROM notifications_channels WHERE category = :cat AND enabled = 1");
+        $stmt->execute([':cat' => $category]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) return false;
+        $okAny = false;
+        foreach ($rows as $r) {
+            $ok = sendTelegramToChat($r['chat_id'], $text, $r['topic_id'] ?? null, $parse_mode);
+            $log = $pdo->prepare("INSERT INTO notifications_log (category, chat_id, topic_id, status, error, text) VALUES (:cat,:chat,:topic,:st,:er,:tx)");
+            $log->execute([
+                ':cat'=>$category,
+                ':chat'=>$r['chat_id'],
+                ':topic'=>$r['topic_id'] ?? null,
+                ':st'=>$ok ? 'sent' : 'failed',
+                ':er'=>$ok ? null : 'send failed',
+                ':tx'=>$text,
+            ]);
+            if ($ok) $okAny = true;
+        }
+        return $okAny;
+    } catch (Exception $e) {
+        try { $pdo->prepare("INSERT INTO notifications_log (category, status, error, text) VALUES (:cat,'error',:er,:tx)")->execute([':cat'=>$category, ':er'=>$e->getMessage(), ':tx'=>$text]); } catch (Exception $e2) {}
+        return false;
+    }
 }
 
 /**
@@ -270,8 +334,8 @@ function approvePayment($payment_id, $admin_note = '') {
     $message = "✅ پرداخت شما با موفقیت تایید شد\n\n💰 مبلغ: " . number_format($payment['price']) . " تومان\n🆔 شناسه تراکنش: {$payment['id_order']}";
     sendTelegramMessage($payment['id_user'], $message);
     
-    // Send to admin channel
-    if (strlen($setting['Channel_Report']) > 0) {
+    // Send to admin channel (legacy)
+    if (!empty($setting['Channel_Report'])) {
         $topicid = select("topicid", "idreport", "report", "paymentreport", "select")['idreport'];
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
@@ -280,6 +344,8 @@ function approvePayment($payment_id, $admin_note = '') {
             'parse_mode' => "HTML"
         ]);
     }
+    // New: category notification and log
+    sendNotification('payments', "✅ تایید پرداخت | مبلغ: " . number_format($payment['price']) . " | کاربر: {$payment['id_user']}");
     
     return true;
 }
@@ -299,6 +365,8 @@ function rejectPayment($payment_id, $reason) {
     // Send notification to user
     $message = "❌ پرداخت شما رد شد\n\n💰 مبلغ: " . number_format($payment['price']) . " تومان\n📝 دلیل: $reason";
     sendTelegramMessage($payment['id_user'], $message);
+    // Category channel notify and log
+    sendNotification('payments', "❌ رد پرداخت | مبلغ: " . number_format($payment['price']) . " | کاربر: {$payment['id_user']} | دلیل: $reason");
     
     return true;
 }

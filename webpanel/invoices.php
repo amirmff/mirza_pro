@@ -128,7 +128,7 @@ $total_pages = (int)ceil($total / $limit);
                                     <td><?php echo htmlspecialchars($invoice['time_sell'] ?? 'N/A'); ?></td>
                                     <td><?php echo ($invoice['Service_time'] && is_numeric($invoice['Service_time']) && is_numeric($invoice['time_sell'])) ? date('Y-m-d H:i:s', (int)$invoice['time_sell'] + ((int)$invoice['Service_time']*86400)) : '-'; ?></td>
                                     <td>
-                                        <button class="btn-sm" onclick="viewInvoice(<?php echo $invoice['id_invoice']; ?>)">مشاهده</button>
+                                        <a class="btn-sm" href="/webpanel/invoice_detail.php?id=<?php echo $invoice['id_invoice']; ?>">مشاهده</a>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
@@ -154,10 +154,6 @@ $total_pages = (int)ceil($total / $limit);
     
     <script src="/webpanel/assets/js/main.js"></script>
     <script>
-        function viewInvoice(id) {
-            // TODO: Implement invoice detail modal
-            alert('Invoice ID: ' + id);
-        }
     </script>
 </body>
 </html>

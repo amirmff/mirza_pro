@@ -6,6 +6,8 @@ $auth = new Auth();
 $auth->requireLogin();
 
 $admin = $auth->getCurrentAdmin();
+$csrf_token = $auth->getCsrfToken();
+if (!$admin || (($admin['rule'] ?? '') !== 'administrator')) { http_response_code(403); exit('Forbidden'); }
 
 // Get payment ID from URL
 $payment_id = $_GET['id'] ?? null;
@@ -254,10 +256,10 @@ $user = select("user", "username, number", "id", $payment['id_user'], "select");
                             <span class="detail-value"><?php echo htmlspecialchars($payment['time'] ?? ''); ?></span>
                         </div>
                         
-                        <?php if (!empty($payment['admin_note'])): ?>
+<?php if (!empty($payment['dec_not_confirmed'])): ?>
                         <div class="admin-note">
                             <div class="admin-note-header">یادداشت مدیر:</div>
-                            <div class="admin-note-text"><?php echo nl2br(htmlspecialchars($payment['admin_note'])); ?></div>
+                            <div class="admin-note-text"><?php echo nl2br(htmlspecialchars($payment['dec_not_confirmed'])); ?></div>
                         </div>
                         <?php endif; ?>
                     </div>
@@ -294,16 +296,8 @@ $user = select("user", "username, number", "id", $payment['id_user'], "select");
                         </button>
                         <?php endif; ?>
                         
-                        <?php if (in_array(($payment['payment_Status'] ?? ''), ['paid','completed'])): ?>
-                        <button class="btn btn-warning" onclick="refundPayment()">
-                            💰 بازگشت وجه
-                        </button>
-                        <?php endif; ?>
                         
-                        <button class="btn btn-info" onclick="addNote()">
-                            📝 افزودن یادداشت
-                        </button>
-                    </div>
+                        
                 </div>
             </div>
         </main>
@@ -358,43 +352,10 @@ $user = select("user", "username, number", "id", $payment['id_user'], "select");
         </div>
     </div>
     
-    <!-- Refund Payment Modal -->
-    <div id="refundModal" class="modal">
-        <div class="modal-content">
-            <h2>بازگشت وجه</h2>
-            <form id="refundForm">
-                <div class="form-group">
-                    <label>دلیل بازگشت وجه:</label>
-                    <textarea name="reason" placeholder="دلیل بازگشت وجه را وارد کنید..." required></textarea>
-                </div>
-                <div class="action-buttons">
-                    <button type="submit" class="btn btn-warning">بازگشت وجه</button>
-                    <button type="button" class="btn btn-danger" onclick="closeModal('refundModal')">انصراف</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
-    <!-- Add Note Modal -->
-    <div id="noteModal" class="modal">
-        <div class="modal-content">
-            <h2>افزودن یادداشت</h2>
-            <form id="noteForm">
-                <div class="form-group">
-                    <label>یادداشت:</label>
-                    <textarea name="note" placeholder="یادداشت خود را وارد کنید..." required><?php echo htmlspecialchars($payment['admin_note'] ?? ''); ?></textarea>
-                </div>
-                <div class="action-buttons">
-                    <button type="submit" class="btn btn-info">ذخیره</button>
-                    <button type="button" class="btn btn-danger" onclick="closeModal('noteModal')">انصراف</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
     <script src="/webpanel/assets/js/main.js"></script>
     <script>
         const paymentId = '<?php echo $payment_id; ?>';
+        const csrfToken = '<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>';
         
         function viewFullReceipt() {
             document.getElementById('receiptModal').classList.add('active');
@@ -408,14 +369,6 @@ $user = select("user", "username, number", "id", $payment['id_user'], "select");
             document.getElementById('rejectModal').classList.add('active');
         }
         
-        function refundPayment() {
-            document.getElementById('refundModal').classList.add('active');
-        }
-        
-        function addNote() {
-            document.getElementById('noteModal').classList.add('active');
-        }
-        
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
         }
@@ -425,6 +378,7 @@ $user = select("user", "username, number", "id", $payment['id_user'], "select");
             e.preventDefault();
             const formData = new FormData(this);
             formData.append('payment_id', paymentId);
+            formData.append('csrf_token', csrfToken);
             
             fetch('/webpanel/api/approve_payment.php', {
                 method: 'POST',
@@ -446,6 +400,7 @@ $user = select("user", "username, number", "id", $payment['id_user'], "select");
             e.preventDefault();
             const formData = new FormData(this);
             formData.append('payment_id', paymentId);
+            formData.append('csrf_token', csrfToken);
             
             fetch('/webpanel/api/reject_payment.php', {
                 method: 'POST',
@@ -462,49 +417,5 @@ $user = select("user", "username, number", "id", $payment['id_user'], "select");
             });
         });
         
-        // Handle refund form
-        document.getElementById('refundForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            if (!confirm('آیا از بازگشت وجه اطمینان دارید؟')) return;
-            
-            const formData = new FormData(this);
-            formData.append('payment_id', paymentId);
-            
-            fetch('/webpanel/api/refund_payment.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('وجه با موفقیت بازگشت داده شد');
-                    location.reload();
-                } else {
-                    alert('خطا: ' + data.message);
-                }
-            });
-        });
-        
-        // Handle note form
-        document.getElementById('noteForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('payment_id', paymentId);
-            
-            fetch('/webpanel/api/add_payment_note.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('یادداشت با موفقیت ذخیره شد');
-                    location.reload();
-                } else {
-                    alert('خطا: ' + data.message);
-                }
-            });
-        });
-    </script>
 </body>
 </html>

@@ -4,6 +4,12 @@ A comprehensive web-based administration panel for managing your Mirza Pro Teleg
 
 ## Features
 
+New in this version:
+- Notifications management (channels/groups + optional topic per category)
+- Admin Logs viewer and Wallet History
+- Bot Management (start/stop/restart, webhook, logs)
+- System Management (SSL, backups, crons)
+
 ✅ **Complete Bot Management**
 - Dashboard with real-time statistics
 - User management (view, edit, delete, block)

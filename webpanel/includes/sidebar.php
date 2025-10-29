@@ -25,6 +25,12 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="icon">💳</span>
             <span>پرداخت‌ها</span>
         </a>
+        <?php if (($admin['rule'] ?? '') === 'administrator'): ?>
+        <a href="/webpanel/wallet_history.php" class="nav-item <?php echo $current_page === 'wallet_history' ? 'active' : ''; ?>">
+            <span class="icon">🧾</span>
+            <span>تاریخچه کیف پول</span>
+        </a>
+        <?php endif; ?>
         <a href="/webpanel/panels.php" class="nav-item <?php echo $current_page === 'panels' ? 'active' : ''; ?>">
             <span class="icon">🖥️</span>
             <span>پنل‌های VPN</span>
@@ -41,6 +47,14 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="icon">🎁</span>
             <span>هدیه گروهی</span>
         </a>
+        <a href="/webpanel/textbot_manager.php" class="nav-item <?php echo $current_page === 'textbot_manager' ? 'active' : ''; ?>">
+            <span class="icon">📝</span>
+            <span>مدیریت متن ربات</span>
+        </a>
+        <a href="/webpanel/test_quota.php" class="nav-item <?php echo $current_page === 'test_quota' ? 'active' : ''; ?>">
+            <span class="icon">🧪</span>
+            <span>سهمیه تست</span>
+        </a>
         <a href="/webpanel/settings.php" class="nav-item <?php echo $current_page === 'settings' ? 'active' : ''; ?>">
             <span class="icon">⚙️</span>
             <span>تنظیمات</span>
@@ -53,6 +67,12 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="icon">📈</span>
             <span>گزارشات</span>
         </a>
+        <?php if (($admin['rule'] ?? '') === 'administrator'): ?>
+        <a href="/webpanel/notifications.php" class="nav-item <?php echo $current_page === 'notifications' ? 'active' : ''; ?>">
+            <span class="icon">🔔</span>
+            <span>اعلان‌ها</span>
+        </a>
+        <?php endif; ?>
         <a href="/webpanel/bot_management.php" class="nav-item <?php echo $current_page === 'bot_management' ? 'active' : ''; ?>">
             <span class="icon">🤖</span>
             <span>مدیریت ربات</span>
@@ -61,6 +81,12 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="icon">🔧</span>
             <span>سیستم</span>
         </a>
+        <?php if (($admin['rule'] ?? '') === 'administrator'): ?>
+        <a href="/webpanel/admin_logs.php" class="nav-item <?php echo $current_page === 'admin_logs' ? 'active' : ''; ?>">
+            <span class="icon">📜</span>
+            <span>فعالیت ادمین‌ها</span>
+        </a>
+        <?php endif; ?>
     </nav>
     
     <div class="sidebar-footer">

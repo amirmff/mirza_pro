@@ -9,19 +9,27 @@ if (!$auth->isLoggedIn()) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
+$admin = $auth->getCurrentAdmin();
+if (!$admin || (($admin['rule'] ?? '') !== 'administrator')) {
+    echo json_encode(['success' => false, 'message' => 'Forbidden']);
+    exit;
+}
 
 $payment_id = $_POST['payment_id'] ?? null;
 $reason = $_POST['reason'] ?? 'رد شده توسط ادمین';
+$csrf = $_POST['csrf_token'] ?? '';
 
 if (!$payment_id) {
     echo json_encode(['success' => false, 'message' => 'Payment ID required']);
     exit;
 }
+if (!$auth->verifyCsrfToken($csrf)) {
+    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
+    exit;
+}
 
 try {
-    // Use bot_core's rejectPayment which:
-    // 1. Updates Payment_report.payment_Status to 'rejected'
-    // 2. Sends Telegram notification to user with rejection reason
+    // Centralized rejection: updates status to 'rejected' and notifies user.
     $result = rejectPayment($payment_id, $reason);
     
     echo json_encode([

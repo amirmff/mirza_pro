@@ -9,26 +9,30 @@ if (!$auth->isLoggedIn()) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
+$admin = $auth->getCurrentAdmin();
+if (!$admin || (($admin['rule'] ?? '') !== 'administrator')) {
+    echo json_encode(['success' => false, 'message' => 'Forbidden']);
+    exit;
+}
 
 $payment_id = $_POST['payment_id'] ?? null;
 $note = $_POST['note'] ?? '';
+$csrf = $_POST['csrf_token'] ?? '';
 
 if (!$payment_id) {
     echo json_encode(['success' => false, 'message' => 'Payment ID required']);
     exit;
 }
+if (!$auth->verifyCsrfToken($csrf)) {
+    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
+    exit;
+}
 
 try {
-    // Use bot_core's approvePayment which:
-    // 1. Updates Payment_report.payment_Status to 'completed'
-    // 2. Adds balance to user.Balance
-    // 3. Sends Telegram notification to user
-    // 4. Sends notification to admin channel
-    $admin = $auth->getCurrentAdmin();
+    // Centralized approval: updates status to 'paid', updates balance, sends Telegram DMs, posts admin report.
     $admin_note = "Approved by {$admin['username']}" . ($note ? ": $note" : "");
-    
     $result = approvePayment($payment_id, $admin_note);
-    
+
     echo json_encode([
         'success' => $result,
         'message' => $result ? 'Payment approved and user notified via Telegram' : 'Failed to approve payment'

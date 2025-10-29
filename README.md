@@ -76,7 +76,7 @@ sudo ./install.sh
 3. **Configure Bot**: Enter token, admin ID, credentials
 4. **Login to Panel**: `http://YOUR_SERVER_IP/webpanel/login.php`
 
-📖 **Full Guide**: [DEPLOYMENT.md](DEPLOYMENT.md)
+📖 **Full Guide**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ---
 
@@ -263,6 +263,15 @@ If you find this project useful, please give it a star ⭐
 ---
 
 ## 📈 Changelog
+
+### v1.1.0 - Full Sync + Notifications + Ops
+- ✅ Web panel fully synced with bot core (users, invoices/services, payments)
+- ✅ Admin wallet history, admin activity logs pages
+- ✅ Category-based notifications (payments/services/system/security) with forum topics and logs
+- ✅ Bot management from panel (start/stop/restart, webhook, logs)
+- ✅ System operations (SSL, backups, cron listing)
+- ✅ CSRF + admin-only enforcement across mutating endpoints
+- ✅ Deployment assets (configs/nginx, configs/supervisor) and docs/DEPLOYMENT.md
 
 ### v1.0.0 - Professional Web Panel Release
 - ✅ Complete web admin panel with RTL UI

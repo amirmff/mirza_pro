@@ -8,6 +8,8 @@ $auth->requireLogin();
 
 $api = new API();
 $admin = $auth->getCurrentAdmin();
+$csrf_token = $auth->getCsrfToken();
+if (!$admin || ($admin['rule'] ?? '') !== 'administrator') { http_response_code(403); exit('Forbidden'); }
 
 // Get invoice ID from URL
 $invoice_id = $_GET['id'] ?? null;
@@ -340,8 +342,12 @@ if (!$invoice) {
                     <label>تعداد روز:</label>
                     <input type="number" name="days" min="1" required>
                 </div>
+                <div class="form-group">
+                    <label>حجم افزایشی (GB) اختیاری:</label>
+                    <input type="number" name="gb" min="0" value="0">
+                </div>
                 <div class="action-buttons">
-                    <button type="submit" class="btn btn-primary">تمدید</button>
+                    <button type="submit" class="btn btn-primary">اعمال</button>
                     <button type="button" class="btn btn-danger" onclick="closeModal('extendModal')">انصراف</button>
                 </div>
             </form>
@@ -392,23 +398,41 @@ if (!$invoice) {
     <script src="/webpanel/assets/js/main.js"></script>
     <script>
         const invoiceId = '<?php echo $invoice_id; ?>';
+        const csrfToken = '<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>';
         
         function showExtendModal() {
-            document.getElementById('extendModal').classList.add('active');
+        function showLocationModal() {
+            document.getElementById('locationModal').classList.add('active');
         }
         
         function showEditModal() {
             document.getElementById('editModal').classList.add('active');
         }
         
-        function showLocationModal() {
-            document.getElementById('locationModal').classList.add('active');
-            loadLocations();
-        }
-        
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
         }
+
+        // Extend form submit
+        document.getElementById('extendForm').addEventListener('submit', function(e){
+            e.preventDefault();
+            const days = parseInt(this.days.value || '0', 10);
+            const gb = parseInt(this.gb.value || '0', 10);
+            const action = (days>0 && gb>0) ? 'extend_both' : (days>0 ? 'extend_days' : 'add_volume');
+            serviceAction(action, {days, gb}).then(doneAction);
+        });
+
+        // Edit form submit: compute days delta and GB delta
+        document.getElementById('editForm').addEventListener('submit', function(e){
+            e.preventDefault();
+            const targetGb = parseInt(this.volume.value || '0', 10);
+            const targetEnd = new Date(this.date_end.value).getTime()/1000;
+            const now = Math.floor(Date.now()/1000);
+            const days = Math.max(0, Math.ceil((targetEnd - now)/86400));
+            // Use extend_both with desired deltas
+            serviceAction('extend_both', {days, gb: targetGb}).then(doneAction);
+        });
+        
         
         function loadLocations() {
             fetch('/webpanel/api/get_locations.php')

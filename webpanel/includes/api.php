@@ -387,7 +387,7 @@ class API {
     
     // Payment Management
     public function getPaymentDetails($payment_id) {
-        $stmt = $this->pdo->prepare("SELECT p.*, u.username, u.number FROM Payment_report p LEFT JOIN user u ON p.id_user = u.id WHERE p.id_payment = :id");
+        $stmt = $this->pdo->prepare("SELECT p.*, u.username, u.number FROM Payment_report p LEFT JOIN user u ON p.id_user = u.id WHERE p.id = :id");
         $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
         $stmt->execute();
         $payment = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -404,12 +404,12 @@ class API {
             $this->pdo->beginTransaction();
             
             // Update payment status
-            $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'paid' WHERE id_payment = :id");
+            $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'paid' WHERE id = :id");
             $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
             $stmt->execute();
             
             // Get payment details
-            $stmt = $this->pdo->prepare("SELECT id_user, price FROM Payment_report WHERE id_payment = :id");
+            $stmt = $this->pdo->prepare("SELECT id_user, price FROM Payment_report WHERE id = :id");
             $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
             $stmt->execute();
             $payment = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -433,12 +433,12 @@ class API {
     }
     
     public function rejectPayment($payment_id, $reason = '') {
-        $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'rejected' WHERE id_payment = :id");
+        $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'rejected' WHERE id = :id");
         $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
         
         if ($stmt->execute()) {
             // Get user ID and send notification
-            $stmt = $this->pdo->prepare("SELECT id_user FROM Payment_report WHERE id_payment = :id");
+            $stmt = $this->pdo->prepare("SELECT id_user FROM Payment_report WHERE id = :id");
             $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
             $stmt->execute();
             $payment = $stmt->fetch(PDO::FETCH_ASSOC);

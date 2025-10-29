@@ -234,6 +234,13 @@ $result = $ManagePanel->deleteUser($panel_name, $username);
 ?>
 ```
 
+## 🔔 Notifications Integration
+
+- New notifications system via `notifications_channels` and `notifications_log` tables
+- Use `sendNotification(category, text)` in `webpanel/includes/bot_core.php`
+- Categories: `payments`, `services`, `system`, `security`
+- Supports forum topics (message_thread_id) per destination
+
 ## 🎯 Integration Checklist
 
 - [x] Create bot_core.php bridge file

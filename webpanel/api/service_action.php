@@ -60,18 +60,21 @@ try {
         case 'reset_usage':
             $result = (new ManagePanel())->ResetUserDataUsage($username, $name_panel);
             $log('service_reset_usage', "invoice $invoice_id user $username panel $name_panel");
+            if ($result && ($result['status'] ?? false)) { sendNotification('services', "🔄 ریست مصرف | کاربر: {$username} | پنل: {$name_panel}"); }
             echo json_encode(['success' => (bool)($result['status'] ?? false), 'result' => $result]);
             break;
 
         case 'toggle_status':
             $result = (new ManagePanel())->Change_status($username, $name_panel);
             $log('service_toggle_status', "invoice $invoice_id user $username panel $name_panel");
+            if ($result && ($result['status'] ?? false)) { sendNotification('services', "⏯️ تغییر وضعیت سرویس | کاربر: {$username} | پنل: {$name_panel}"); }
             echo json_encode(['success' => (bool)($result['status'] ?? false), 'result' => $result]);
             break;
 
         case 'revoke_sub':
             $result = (new ManagePanel())->Revoke_sub($name_panel, $username);
             $log('service_revoke_sub', "invoice $invoice_id user $username panel $name_panel");
+            if ($result && ($result['status'] ?? false)) { sendNotification('services', "♻️ بازتولید لینک ساب | کاربر: {$username} | پنل: {$name_panel}"); }
             echo json_encode(['success' => (bool)($result['status'] ?? false), 'result' => $result]);
             break;
 
@@ -79,8 +82,39 @@ try {
             $result = (new ManagePanel())->RemoveUser($name_panel, $username);
             if ($result && ($result['status'] ?? '') === 'successful') {
                 update('invoice', 'Status', 'deactive', 'id_invoice', $invoice_id);
+                sendNotification('services', "🗑️ حذف سرویس | کاربر: {$username} | پنل: {$name_panel}");
             }
             $log('service_delete', "invoice $invoice_id user $username panel $name_panel");
+            echo json_encode(['success' => (bool)($result['status'] ?? false), 'result' => $result]);
+            break;
+
+        case 'extend_days':
+            $days = max(0, (int)($_POST['days'] ?? 0));
+            if ($days <= 0) { echo json_encode(['success'=>false,'message'=>'Invalid days']); break; }
+            $result = (new ManagePanel())->extra_time($username, $code_panel, $days);
+            $log('service_extend_days', "invoice $invoice_id user $username +{$days}d");
+            if ($result && ($result['status'] ?? false)) { sendNotification('services', "⏰ تمدید زمان | ${days} روز | کاربر: {$username}"); }
+            echo json_encode(['success' => (bool)($result['status'] ?? false), 'result' => $result]);
+            break;
+
+        case 'add_volume':
+            $gb = max(0, (int)($_POST['gb'] ?? 0));
+            if ($gb <= 0) { echo json_encode(['success'=>false,'message'=>'Invalid GB']); break; }
+            $result = (new ManagePanel())->extra_volume($username, $code_panel, $gb);
+            $log('service_add_volume', "invoice $invoice_id user $username +{$gb}GB");
+            if ($result && ($result['status'] ?? false)) { sendNotification('services', "📦 افزایش حجم | ${gb}GB | کاربر: {$username}"); }
+            echo json_encode(['success' => (bool)($result['status'] ?? false), 'result' => $result]);
+            break;
+
+        case 'extend_both':
+            $days = max(0, (int)($_POST['days'] ?? 0));
+            $gb = max(0, (int)($_POST['gb'] ?? 0));
+            if ($days <= 0 && $gb <= 0) { echo json_encode(['success'=>false,'message'=>'Invalid params']); break; }
+            $method = 'اضافه شدن زمان و حجم به ماه بعد';
+            $code_product = $invoice['code_product'] ?? 'custom_volume';
+            $result = (new ManagePanel())->extend($method, $gb, $days, $username, $code_product, $code_panel);
+            $log('service_extend_both', "invoice $invoice_id user $username +{$days}d +{$gb}GB");
+            if ($result && ($result['status'] ?? false)) { sendNotification('services', "🔧 تمدید زمان/حجم | ${days}d/${gb}GB | کاربر: {$username}"); }
             echo json_encode(['success' => (bool)($result['status'] ?? false), 'result' => $result]);
             break;
 
