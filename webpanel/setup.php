@@ -141,25 +141,42 @@ PHP;
             $cols = $pdo->query("SHOW COLUMNS FROM admin")->fetchAll(PDO::FETCH_COLUMN, 0);
             $hasNormalized = in_array('username', $cols) && in_array('password', $cols);
             $hasLegacy    = in_array('username_admin', $cols) && in_array('password_admin', $cols);
-            if ($hasNormalized) {
-                $stmt = $pdo->prepare("INSERT INTO admin (id_admin, username, password, rule) VALUES (:id, :username, :password, 'administrator')
-                                       ON DUPLICATE KEY UPDATE password = VALUES(password), username = VALUES(username)");
-                $stmt->execute([
-                    ':id' => $_SESSION['admin_id'],
-                    ':username' => $_SESSION['admin_username'],
-                    ':password' => $hashed_password
-                ]);
-            } elseif ($hasLegacy) {
-                $stmt = $pdo->prepare("INSERT INTO admin (id_admin, username_admin, password_admin, rule) VALUES (:id, :username, :password, 'administrator')
-                                       ON DUPLICATE KEY UPDATE password_admin = VALUES(password_admin), username_admin = VALUES(username_admin)");
-                $stmt->execute([
-                    ':id' => $_SESSION['admin_id'],
-                    ':username' => $_SESSION['admin_username'],
-                    ':password' => $_SESSION['admin_password'] // legacy is plain text
-                ]);
-            } else {
+            // Build dynamic insert covering both normalized and legacy columns
+            $fields = ['id_admin' => ':id', 'rule' => "'administrator'"];
+            $params = [':id' => $_SESSION['admin_id']];
+            $updates = [];
+            if (in_array('username', $cols)) {
+                $fields['username'] = ':u_norm';
+                $params[':u_norm'] = $_SESSION['admin_username'];
+                $updates[] = "username = VALUES(username)";
+            }
+            if (in_array('password', $cols)) {
+                $fields['password'] = ':p_norm';
+                $params[':p_norm'] = $hashed_password;
+                $updates[] = "password = VALUES(password)";
+            }
+            if (in_array('username_admin', $cols)) {
+                $fields['username_admin'] = ':u_legacy';
+                $params[':u_legacy'] = $_SESSION['admin_username'];
+                $updates[] = "username_admin = VALUES(username_admin)";
+            }
+            if (in_array('password_admin', $cols)) {
+                // Keep legacy plain text to match existing logic
+                $fields['password_admin'] = ':p_legacy';
+                $params[':p_legacy'] = $_SESSION['admin_password'];
+                $updates[] = "password_admin = VALUES(password_admin)";
+            }
+            if (empty($updates)) {
                 throw new Exception('Admin table schema is missing expected columns.');
             }
+            // Always include rule in updates if present
+            if (in_array('rule', $cols)) { $updates[] = "rule = VALUES(rule)"; }
+            $columnsSql = implode(', ', array_keys($fields));
+            $valuesSql = implode(', ', array_values($fields));
+            $updateSql = implode(', ', $updates);
+            $sql = "INSERT INTO admin ($columnsSql) VALUES ($valuesSql) ON DUPLICATE KEY UPDATE $updateSql";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
             
             // Set webhook
             $webhook_url = !empty($_SESSION['domain']) ? 
