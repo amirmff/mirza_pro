@@ -1,6 +1,8 @@
-# Mirza Pro - Deployment Guide
+# Mirza Pro - Deployment Guide (redirect)
 
-Complete deployment guide for Mirza Pro Telegram Bot with Web Panel.
+The up-to-date deployment and operations guide has moved to docs/DEPLOYMENT.md.
+
+Please see: docs/DEPLOYMENT.md
 
 ## 📋 Prerequisites
 

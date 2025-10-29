@@ -162,9 +162,10 @@ mirza_pro/
 
 ## 📚 Documentation
 
-- 📖 [Complete Deployment Guide](DEPLOYMENT.md) - Installation, SSL, backups, troubleshooting
-- 🐛 [Bug Fixes Log](BUGFIXES.md) - Fixed issues and improvements
+- 📄 [Fork Notice](FORK_NOTICE.md) - What’s different in this fork
+- 📖 [Complete Deployment Guide](docs/DEPLOYMENT.md) - Installation, SSL, backups, troubleshooting
 - 🔧 [Web Panel Guide](webpanel/README.md) - Admin panel features
+- 🔗 [Integration Guide](WEBPANEL_BOT_INTEGRATION_GUIDE.md) - Panel ↔ bot bridging details
 
 ---
 
@@ -288,8 +289,8 @@ If you find this project useful, please give it a star ⭐
 
 **Forked from**: [mahdiMGF2/mirza_pro](https://github.com/mahdiMGF2/mirza_pro)  
 **Maintained by**: [amirmff](https://github.com/amirmff)  
-**Version**: 1.0.0  
-**Last Updated**: 2025-01-26
+**Version**: 1.1.0  
+**Last Updated**: 2025-10-29
 
 ---
 

@@ -89,35 +89,29 @@ cronbot/gift.php - Gift code processing
 ### ✅ Completed Pages
 - **login.php** - Admin authentication
 - **index.php** - Dashboard with statistics
-- **users.php** - User listing with filters
+- **users.php** - User listing with filters + actions
+- **user_detail.php** - Detailed user profile and actions
 - **invoices.php** - Service/invoice management
-- **payments.php** - Payment approval system
-- **panels.php** - VPN panel listing
-- **products.php** - Product catalog
-- **settings.php** - Basic settings viewer
+- **invoice_detail.php** - Service operations (reset/toggle/revoke/extend days/GB)
+- **payments.php** - Payment approval listing
+- **payment_detail.php** - Payment approval/reject with CSRF
+- **panels.php / panel_manager.php** - VPN panel listing/CRUD
+- **products.php / product_manager.php** - Product catalog/CRUD
+- **discount_manager.php** - Discount management
+- **channel_manager.php** - Force-join channels
+- **textbot_manager.php** - Bot texts management
+- **test_quota.php** - Test quota management
+- **wallet_history.php** - Wallet and payments history
+- **admin_logs.php** - Admin activity logs
+- **notifications.php** - Category-based notifications destinations/logs
+- **settings.php** - Settings
 - **reports.php** - Statistics page
 - **setup.php** - Initial setup wizard
 
-### 🚧 Pages Needed for Full Management
+### 🚧 Remaining Enhancements
 
-#### Critical Management Pages (Priority 1)
-1. **user_detail.php** - Complete user profile editor
-   - Edit balance, limits, status
-   - View user history
-   - Manage user services
-   - Send messages to user
-   
-2. **invoice_detail.php** - Service details & management
-   - View service details
-   - Extend/renew service
-   - Change location
-   - Reset configuration
-   - View usage statistics
-
-3. **payment_detail.php** - Payment transaction details
-   - View receipt image
-   - Approve/reject with reason
-   - Refund
+#### Critical (done)
+- user_detail.php, invoice_detail.php, payment_detail.php are implemented with CSRF/admin enforcement. Refund is intentionally not implemented server-side.
 
 4. **panel_manager.php** - VPN panel CRUD
    - Add/edit/delete panels
@@ -189,19 +183,11 @@ cronbot/gift.php - Gift code processing
     - Draw settings
     - Winner history
 
-#### Bot Control (Priority 4)
-17. **bot_control.php** - Bot operations
-    - Start/stop bot
-    - View bot status
-    - Test webhook
-    - Set webhook URL
-    - View bot logs
+#### Bot Control (done)
+- bot_management.php (start/stop/restart, webhook, logs) and system.php (SSL/backups/cron list)
 
-18. **cron_manager.php** - Cron job management
-    - Enable/disable crons
-    - View cron logs
-    - Manual execution
-    - Schedule configuration
+#### Cron Manager (enhancement)
+- Optional future page for cron edit/enable/disable; current system lists crons and supports backups.
 
 ## API Endpoints Needed
 

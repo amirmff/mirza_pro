@@ -47,24 +47,9 @@ New in this version:
 
 1. **Files are already in place** in the `webpanel/` directory
 
-2. **Update Admin Passwords**
+2. **Admin Accounts**
 
-   By default, admins in your database have plaintext passwords. You need to hash them:
-
-   ```php
-   // Run this script ONCE to hash existing admin passwords:
-   php webpanel/scripts/hash_passwords.php
-   ```
-
-   Or manually update via SQL:
-   ```sql
-   UPDATE admin SET password_admin = '$2y$10$YourHashedPasswordHere' WHERE id_admin = 1;
-   ```
-
-   To generate a hash:
-   ```php
-   echo password_hash('your_password', PASSWORD_BCRYPT);
-   ```
+   The bot’s database stores admin credentials in the `admin` table (field names may vary per original schema). This panel authenticates against that table (no separate user store). Ensure you know an existing admin username/password or set them via SQL in development.
 
 3. **Configure Web Server**
 
