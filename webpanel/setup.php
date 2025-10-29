@@ -67,13 +67,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $dbname = '__DB_NAME__';
 $usernamedb = '__DB_USER__';
 $passworddb = '__DB_PASS__';
+$dbhost = '__DB_HOST__';
 
-$connect = mysqli_connect("localhost", $usernamedb, $passworddb, $dbname);
+$connect = mysqli_connect("__DB_HOST__", $usernamedb, $passworddb, $dbname);
 if (!$connect || $connect->connect_error) { die("Database connection error."); }
 mysqli_set_charset($connect, "utf8mb4");
 
 $options = [ PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false, ];
-$dsn = "mysql:host=localhost;dbname=$dbname;charset=utf8mb4";
+$dsn = "mysql:host=__DB_HOST__;dbname=$dbname;charset=utf8mb4";
 try { $pdo = new PDO($dsn, $usernamedb, $passworddb, $options); } catch (\PDOException $e) { error_log("Database connection failed: " . $e->getMessage()); die("PDO connection error."); }
 
 $APIKEY = '__API_KEY__';
@@ -88,6 +89,7 @@ PHP;
                 '__DB_NAME__' => addslashes($_SESSION['db_name']),
                 '__DB_USER__' => addslashes($_SESSION['db_user']),
                 '__DB_PASS__' => addslashes($_SESSION['db_pass']),
+                '__DB_HOST__' => addslashes($_SESSION['db_host'] ?? 'localhost'),
                 '__API_KEY__' => addslashes($_SESSION['bot_token']),
                 '__ADMIN_ID__' => addslashes($_SESSION['admin_id']),
                 '__DOMAIN__'  => addslashes($_SESSION['domain']),
