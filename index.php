@@ -1,19 +1,19 @@
 <?php
-$version = @file_get_contents('version');
+$version = @file_get_contents(__DIR__ . '/version');
 if ($version === false) { $version = 'unknown'; }
 date_default_timezone_set('Asia/Tehran');
 $new_marzban = isset($new_marzban) ? $new_marzban : false;
 ini_set('default_charset', 'UTF-8');
 ini_set('error_log', 'error_log');
 ini_set('memory_limit', '-1');
-require_once 'config.php';
-require_once 'botapi.php';
-require_once 'jdf.php';
-require_once 'function.php';
-require_once 'keyboard.php';
-require_once 'vendor/autoload.php';
-require_once 'panels.php';
-$textbotlang = languagechange('text.json');
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/botapi.php';
+require_once __DIR__ . '/jdf.php';
+require_once __DIR__ . '/function.php';
+require_once __DIR__ . '/keyboard.php';
+require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/panels.php';
+$textbotlang = languagechange(__DIR__ . '/text.json');
 if ($is_bot)
     return;
 if (isset($update['chat_member'])) {
