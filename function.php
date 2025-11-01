@@ -1334,14 +1334,18 @@ function publickey()
 function languagechange($path_dir)
 {
     $setting = select("setting", "*");
-    return json_decode(file_get_contents($path_dir), true)['fa'];
-    if (intval($setting['languageen']) == 1) {
-        return json_decode(file_get_contents($path_dir), true)['en'];
-    } elseif (intval($setting['languageru']) == 1) {
-        return json_decode(file_get_contents($path_dir), true)['ru'];
-    } else {
-        return json_decode(file_get_contents($path_dir), true)['fa'];
+    $json = @file_get_contents($path_dir);
+    if ($json === false) {
+        return ['fa' => []]['fa'];
     }
+    $data = json_decode($json, true);
+    if (!is_array($data)) { return []; }
+    if (intval($setting['languageen'] ?? 0) === 1 && isset($data['en'])) {
+        return $data['en'];
+    } elseif (intval($setting['languageru'] ?? 0) === 1 && isset($data['ru'])) {
+        return $data['ru'];
+    }
+    return $data['fa'] ?? ([]);
 }
 function generateAuthStr($length = 10)
 {

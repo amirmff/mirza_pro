@@ -144,7 +144,7 @@ if (isset($APIKEY)) {
             <?php else: ?>
                 <button onclick="controlBot('start')" class="btn btn-success">▶️ شروع ربات</button>
             <?php endif; ?>
-            <button onclick="updateWebhook()" class="btn btn-primary">🔗 تنظیم Webhook به /webhooks.php</button>
+            <button onclick="updateWebhook()" class="btn btn-primary">🔗 تنظیم Webhook به /index.php</button>
             <button onclick="refreshWebhook()" class="btn btn-secondary">ℹ️ وضعیت Webhook</button>
             <button onclick="showLogs()" class="btn btn-secondary">📋 نمایش لاگ‌ها</button>
             <button onclick="clearLogs()" class="btn btn-secondary">🗑️ پاک کردن لاگ‌ها</button>
@@ -289,7 +289,7 @@ function clearLogs() {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `action=clear_logs&csrf_token=<?php echo generate_csrf_token(); ?>`
+        body: `action=clear_logs&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
     })
     .then(response => response.json())
     .then(data => {

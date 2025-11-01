@@ -154,10 +154,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             
-            // Set webhook
+            // Set webhook to index.php (Telegram updates handler)
             $webhook_url = !empty($_SESSION['domain']) ? 
-                "https://{$_SESSION['domain']}/webhooks.php" : 
-                (isset($_SERVER['SERVER_ADDR']) ? "http://{$_SERVER['SERVER_ADDR']}/webhooks.php" : '');
+                "https://{$_SESSION['domain']}/index.php" : 
+                (isset($_SERVER['SERVER_ADDR']) ? "http://{$_SERVER['SERVER_ADDR']}/index.php" : '');
             if (!empty($webhook_url)) {
                 $ch = curl_init("https://api.telegram.org/bot{$_SESSION['bot_token']}/setWebhook");
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

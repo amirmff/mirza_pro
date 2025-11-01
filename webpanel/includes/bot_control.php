@@ -91,7 +91,8 @@ switch ($action) {
         if (empty($APIKEY)) { echo json_encode(['success'=>false,'message'=>'توکن ربات تنظیم نشده است']); break; }
         $domain = $_POST['domain'] ?? ($domainhosts ?? '');
         $scheme = (!empty($domain) ? 'https' : 'http');
-        $webhook_url = !empty($domain) ? "$scheme://{$domain}/webhooks.php" : (isset($_SERVER['SERVER_ADDR'])?"http://{$_SERVER['SERVER_ADDR']}/webhooks.php":"");
+        // Telegram webhook endpoint is index.php in this project
+        $webhook_url = !empty($domain) ? "$scheme://{$domain}/index.php" : (isset($_SERVER['SERVER_ADDR'])?"http://{$_SERVER['SERVER_ADDR']}/index.php":"");
         $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/setWebhook");
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>['url'=>$webhook_url]]);
         $response = curl_exec($ch); $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
