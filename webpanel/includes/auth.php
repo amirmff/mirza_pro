@@ -141,9 +141,11 @@ class Auth {
     }
     
     public function updatePassword($admin_id, $new_password) {
-        // Bot uses plain text passwords in admin.password field
-        $stmt = $this->pdo->prepare("UPDATE admin SET password = :password WHERE id_admin = :id");
-        $stmt->bindParam(':password', $new_password, PDO::PARAM_STR);
+        // Store bcrypt hash in password; keep legacy plain text in password_admin for backward compatibility
+        $hash = password_hash($new_password, PASSWORD_BCRYPT);
+        $stmt = $this->pdo->prepare("UPDATE admin SET password = :password, password_admin = :legacy WHERE id_admin = :id");
+        $stmt->bindParam(':password', $hash, PDO::PARAM_STR);
+        $stmt->bindParam(':legacy', $new_password, PDO::PARAM_STR);
         $stmt->bindParam(':id', $admin_id, PDO::PARAM_STR);
         return $stmt->execute();
     }
