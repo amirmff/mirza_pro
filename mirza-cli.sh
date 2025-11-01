@@ -13,23 +13,71 @@ as_root() { if [ "$EUID" -ne 0 ]; then echo -e "${RED}Run as root: sudo mirza ..
 ensure_install_dir() { [ -f "$INSTALL_DIR/index.php" ] || INSTALL_DIR="/var/www/mirza_pro_latest"; }
 
 # DB helpers
-DB_NAME=""; DB_USER=""; DB_PASSWORD=""
+DB_NAME=""; DB_USER=""; DB_PASSWORD=""; DB_HOST="localhost"
 load_db_creds() {
+  # 1) From saved installer creds
   if [ -f /root/.mirza_db_credentials ]; then . /root/.mirza_db_credentials || true; fi
-  if [ -z "${DB_NAME:-}" ] && [ -f "$INSTALL_DIR/config.php" ]; then
-    DB_NAME=$(grep -Po "^\$dbname\s*=\s*'\K[^']+" "$INSTALL_DIR/config.php" | head -1 || true)
-    DB_USER=$(grep -Po "^\$usernamedb\s*=\s*'\K[^']+" "$INSTALL_DIR/config.php" | head -1 || true)
+  # 2) From config.php variables ($dbname, $usernamedb, $passworddb)
+  if [ -f "$INSTALL_DIR/config.php" ]; then
+    DB_NAME=${DB_NAME:-$(grep -Po "^\$dbname\s*=\s*'\K[^']+" "$INSTALL_DIR/config.php" | head -1 || true)}
+    DB_USER=${DB_USER:-$(grep -Po "^\$usernamedb\s*=\s*'\K[^']+" "$INSTALL_DIR/config.php" | head -1 || true)}
+    DB_PASSWORD=${DB_PASSWORD:-$(grep -Po "^\$passworddb\s*=\s*'\K[^']+" "$INSTALL_DIR/config.php" | head -1 || true)}
+  fi
+  # 3) From webpanel JSON (written by installer/setup)
+  if [ -z "${DB_NAME:-}" ] || [ -z "${DB_USER:-}" ] || [ -z "${DB_PASSWORD:-}" ]; then
+    if [ -f "$INSTALL_DIR/webpanel/.db_credentials.json" ]; then
+      DB_NAME=${DB_NAME:-$(grep -Po '"db_name"\s*:\s*"\K[^"]+' "$INSTALL_DIR/webpanel/.db_credentials.json" | head -1 || true)}
+      DB_USER=${DB_USER:-$(grep -Po '"db_user"\s*:\s*"\K[^"]+' "$INSTALL_DIR/webpanel/.db_credentials.json" | head -1 || true)}
+      DB_PASSWORD=${DB_PASSWORD:-$(grep -Po '"db_password"\s*:\s*"\K[^"]+' "$INSTALL_DIR/webpanel/.db_credentials.json" | head -1 || true)}
+      DB_HOST=${DB_HOST:-$(grep -Po '"db_host"\s*:\s*"\K[^"]+' "$INSTALL_DIR/webpanel/.db_credentials.json" | head -1 || echo localhost)}
+    fi
   fi
 }
 mysql_exec() {
   local sql="$1"
   if [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
-    mysql -u"$DB_USER" -p"$DB_PASSWORD" -D "$DB_NAME" -e "$sql"; return $?
+    mysql -h "${DB_HOST:-localhost}" -u"$DB_USER" -p"$DB_PASSWORD" -D "$DB_NAME" -e "$sql"; return $?
   fi
   if [ -f /etc/mysql/debian.cnf ]; then
     if [ -n "${DB_NAME:-}" ]; then mysql --defaults-file=/etc/mysql/debian.cnf -D "$DB_NAME" -e "$sql"; else mysql --defaults-file=/etc/mysql/debian.cnf -e "$sql"; fi; return $?
   fi
   echo "No MySQL credentials available"; return 1
+}
+# Admin-level MySQL execution (root/debian maintenance)
+mysql_admin_exec() {
+  local sql="$1"
+  if [ -f /root/.mysql_root_password ]; then
+    local RP; RP=$(cat /root/.mysql_root_password 2>/dev/null || true)
+    if [ -n "$RP" ] && [ "$RP" != "EXISTING_MYSQL=true" ]; then mysql -uroot -p"$RP" -e "$sql"; return $?; fi
+  fi
+  if [ -f /etc/mysql/debian.cnf ]; then mysql --defaults-file=/etc/mysql/debian.cnf -e "$sql"; return $?; fi
+  if sudo mysql -e "SELECT 1;" >/dev/null 2>&1; then sudo mysql -e "$sql"; return $?; fi
+  echo "No admin MySQL access available"; return 1
+}
+ensure_db_user() {
+  as_root; ensure_install_dir; load_db_creds
+  if [ -z "${DB_NAME:-}" ]; then read -rp "DB name: " DB_NAME; fi
+  if [ -z "${DB_USER:-}" ]; then read -rp "DB user: " DB_USER; fi
+  if [ -z "${DB_PASSWORD:-}" ]; then read -rsp "New DB password (generated if empty): " DB_PASSWORD; echo; fi
+  [ -z "$DB_PASSWORD" ] && DB_PASSWORD=$(openssl rand -base64 24)
+  mysql_admin_exec "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; \
+    CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD'; \
+    ALTER USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD'; \
+    GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost'; FLUSH PRIVILEGES;" || true
+  # Persist creds for app and setup wizard
+  install -d -m 750 -o www-data -g www-data "$INSTALL_DIR/webpanel" 2>/dev/null || true
+  cat > /root/.mirza_db_credentials <<EOF
+DB_NAME=${DB_NAME}
+DB_USER=${DB_USER}
+DB_PASSWORD=${DB_PASSWORD}
+EOF
+  chmod 600 /root/.mirza_db_credentials
+  cat > "$INSTALL_DIR/webpanel/.db_credentials.json" <<JSON
+{"db_host":"localhost","db_name":"${DB_NAME}","db_user":"${DB_USER}","db_password":"${DB_PASSWORD}"}
+JSON
+  chown www-data:www-data "$INSTALL_DIR/webpanel/.db_credentials.json" 2>/dev/null || true
+  chmod 600 "$INSTALL_DIR/webpanel/.db_credentials.json" 2>/dev/null || true
+  echo "DB ensured and credentials saved."
 }
 
 status() { supervisorctl status "$PROGRAM" || true; }
@@ -128,6 +176,7 @@ menu() {
     echo "  9) Uninstall (purge database)"
     echo " 10) Reset admin username/password"
     echo " 11) Reload PHP-FPM and Nginx"
+    echo " 12) Ensure DB user/permissions"
     echo "  0) Exit"
     echo ""
     read -rp "Select: " opt
@@ -143,6 +192,7 @@ menu() {
       9) uninstall_purge_db; read -rp "Enter to continue..." _;;
       10) reset_admin; read -rp "Enter to continue..." _;;
       11) reload_web; read -rp "Enter to continue..." _;;
+      12) ensure_db_user; read -rp "Enter to continue..." _;;
       0) exit 0;;
       *) echo "Invalid"; sleep 1;;
     esac
@@ -157,6 +207,7 @@ Usage: mirza <command> [args]
   setup                   Re-run setup wizard
   uninstall [--purge-db]  Remove app files (and optionally DB)
   reset-admin [--username U] [--password P]
+  db-ensure               Create DB/user and grant perms (uses admin access)
   reload-web              Reload php-fpm and nginx
   menu                    Open interactive menu (default)
 USAGE
@@ -169,7 +220,7 @@ main() {
     status) status;; start) start_bot;; stop) stop_bot;; restart) restart_bot;; logs) logs;;
     update) update_code;; setup) setup_flag;; reload-web) reload_web;;
     uninstall) if [ "${1:-}" = "--purge-db" ]; then uninstall_purge_db; else uninstall_keep_db; fi;;
-    reset-admin) reset_admin "$@";; menu|'') menu;; -h|--help|help) usage;;
+    reset-admin) reset_admin "$@";; db-ensure) ensure_db_user;; menu|'') menu;; -h|--help|help) usage;;
     *) echo "Unknown command: $cmd"; usage; exit 1;;
   esac
 }

@@ -1,5 +1,6 @@
 <?php
-$version = file_get_contents('version');
+$version = @file_get_contents('version');
+if ($version === false) { $version = 'unknown'; }
 date_default_timezone_set('Asia/Tehran');
 $new_marzban = isset($new_marzban) ? $new_marzban : false;
 ini_set('default_charset', 'UTF-8');
