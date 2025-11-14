@@ -365,21 +365,39 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: `action=set_domain&domain=${encodeURIComponent(domain)}&email=${encodeURIComponent(email)}&csrf_token=${csrfToken}`
         })
-        .then(r => r.json())
+        .then(r => {
+            console.log('Domain response status:', r.status);
+            if (!r.ok) {
+                throw new Error('HTTP ' + r.status);
+            }
+            return r.text();
+        })
+        .then(text => {
+            console.log('Domain response text:', text.substring(0, 200));
+            try {
+                return JSON.parse(text);
+            } catch(e) {
+                console.error('JSON parse error:', e, 'Text:', text);
+                throw new Error('Invalid JSON: ' + text.substring(0, 100));
+            }
+        })
         .then(data => {
+            console.log('Domain data:', data);
             hideLoading();
             if (data.success) {
                 showAlert('success', data.message + (data.ssl_success ? ' - SSL نصب شد' : ''));
                 sslInfo.innerHTML = data.ssl || '';
                 setTimeout(() => location.reload(), 2000);
             } else {
-                showAlert('error', data.message);
-                sslInfo.innerHTML = data.ssl || '';
+                showAlert('error', data.message || 'خطا در اعمال دامنه');
+                sslInfo.innerHTML = data.ssl || data.details || '';
             }
         })
         .catch(e => {
+            console.error('Domain fetch error:', e);
             hideLoading();
-            showAlert('error', 'خطا در برقراری ارتباط');
+            showAlert('error', 'خطا در برقراری ارتباط: ' + e.message);
+            sslInfo.innerHTML = 'خطا: ' + e.message;
         });
     }
     

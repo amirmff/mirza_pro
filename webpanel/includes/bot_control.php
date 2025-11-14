@@ -4,8 +4,14 @@
  * Handles bot process control, logs, and webhook management
  */
 
+// Prevent any output before JSON
+ob_start();
+
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/bot_core.php';
+
+// Clear any output
+ob_clean();
 
 header('Content-Type: application/json');
 
@@ -187,6 +193,7 @@ switch ($action) {
             $message .= ' | SSL نصب شد';
         }
         
+        ob_clean();
         echo json_encode([
             'success' => $code1 === 0,
             'message' => $message,
@@ -194,7 +201,7 @@ switch ($action) {
             'ssl' => $ssl_msg,
             'ssl_success' => $ssl_success
         ]);
-        break;
+        exit;
 
     case 'issue_ssl':
         $domain = trim($_POST['domain'] ?? '');
