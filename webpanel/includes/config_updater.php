@@ -2,6 +2,7 @@
 /**
  * Config File Updater
  * Properly updates config.php with setup wizard values
+ * Includes syntax validation to prevent corruption
  */
 
 class ConfigUpdater {
@@ -33,53 +34,85 @@ class ConfigUpdater {
         }
         
         if (!is_writable($this->config_file)) {
-            // Try to fix permissions automatically using sudo/exec
+            // Try to fix permissions automatically
             $real_path = realpath($this->config_file);
-            
-            // Try chmod first
             @chmod($real_path, 0664);
             
-            // If still not writable, try to change ownership (requires root/sudo)
             if (!is_writable($real_path)) {
-                // Get current web server user
                 $web_user = 'www-data';
                 if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
                     $process_user = posix_getpwuid(posix_geteuid());
                     $web_user = $process_user['name'] ?? 'www-data';
                 }
-                
-                // Try to change ownership via exec (if we have permissions)
                 @exec("chown {$web_user}:{$web_user} " . escapeshellarg($real_path) . " 2>&1", $chown_out, $chown_code);
                 @chmod($real_path, 0664);
                 
-                // Check again
                 if (!is_writable($real_path)) {
                     throw new Exception("Config file not writable: " . $this->config_file . ". Please run as root: chown www-data:www-data " . $real_path . " && chmod 664 " . $real_path);
                 }
             }
         }
         
-        $content = file_get_contents($this->config_file);
+        // Read original content
+        $original_content = file_get_contents($this->config_file);
+        $content = $original_content;
         
-        // Update each value
+        // Update each value with careful replacement
         foreach ($this->values as $var_name => $value) {
             $escaped_value = addslashes($value);
             
-            // Pattern to match: $VARNAME = 'anything' or $VARNAME = "{placeholder}";
-            // Use a more specific pattern that captures the full assignment
-            $pattern = "/(\\\${$var_name}\s*=\s*['\"])([^'\"]*)(['\"];)/";
+            // Pattern to match: $VARNAME = 'anything';
+            // Capture groups: 1=variable and equals, 2=quote, 3=value, 4=quote and semicolon
+            $pattern = "/(\\\${$var_name}\s*=\s*)(['\"])([^'\"]*)(\\2;)/";
             
-            // Replace with proper escaping - use single quotes to avoid variable interpolation issues
-            $replacement = '$1' . $escaped_value . '$3';
+            // Build replacement string carefully
+            $replacement = '${1}' . "'" . $escaped_value . "';";
             
-            $content = preg_replace($pattern, $replacement, $content);
+            // Perform replacement
+            $new_content = preg_replace($pattern, $replacement, $content);
+            
+            // Validate that replacement worked correctly
+            if ($new_content === null) {
+                throw new Exception("Regex error while updating {$var_name}");
+            }
+            
+            // Verify the replacement actually changed something and is valid
+            if ($new_content === $content) {
+                // No change - maybe the pattern didn't match, try alternative
+                $alt_pattern = "/(\\\${$var_name}\s*=\s*['\"])[^'\"]*(['\"];)/";
+                $alt_replacement = '${1}' . $escaped_value . '${2}';
+                $new_content = preg_replace($alt_pattern, $alt_replacement, $content);
+                
+                if ($new_content === $content || $new_content === null) {
+                    error_log("Warning: Could not find pattern to replace for {$var_name}");
+                    continue; // Skip this variable
+                }
+            }
+            
+            $content = $new_content;
         }
         
-        // Write back
-        $result = file_put_contents($this->config_file, $content);
+        // Validate PHP syntax before writing
+        $temp_file = $this->config_file . '.tmp';
+        file_put_contents($temp_file, $content);
         
-        if ($result === false) {
-            throw new Exception("Failed to write config file");
+        // Check syntax using PHP lint
+        $output = [];
+        $return_code = 0;
+        @exec("php -l " . escapeshellarg($temp_file) . " 2>&1", $output, $return_code);
+        
+        if ($return_code !== 0) {
+            // Syntax error detected - restore original
+            @unlink($temp_file);
+            $error_msg = "Syntax error in updated config.php: " . implode("\n", $output);
+            error_log($error_msg);
+            throw new Exception("Failed to update config.php - syntax error detected. Original file preserved.");
+        }
+        
+        // Syntax is valid - replace original file
+        if (!rename($temp_file, $this->config_file)) {
+            @unlink($temp_file);
+            throw new Exception("Failed to replace config.php");
         }
         
         // Verify updates
@@ -95,7 +128,7 @@ class ConfigUpdater {
         $content = file_get_contents($this->config_file);
         
         foreach ($this->values as $var_name => $value) {
-            // Check if the value appears in the file (in main config section, not early return)
+            // Check if the value appears in the file
             $pattern = "/\\\${$var_name}\s*=\s*['\"]" . preg_quote($value, '/') . "['\"];/";
             if (!preg_match($pattern, $content)) {
                 error_log("Warning: Config update verification failed for {$var_name}");
@@ -103,4 +136,3 @@ class ConfigUpdater {
         }
     }
 }
-
