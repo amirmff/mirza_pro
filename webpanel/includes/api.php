@@ -374,59 +374,33 @@ class API {
         return ['success' => true, 'payment' => $payment];
     }
     
+    /**
+     * Approve payment - Uses centralized function from bot_core.php
+     * @deprecated Use approvePayment() from bot_core.php directly
+     */
     public function approvePayment($payment_id, $notes = '') {
-        try {
-            $this->pdo->beginTransaction();
-            
-            // Update payment status
-            $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'paid' WHERE id = :id");
-            $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
-            $stmt->execute();
-            
-            // Get payment details
-            $stmt = $this->pdo->prepare("SELECT id_user, price FROM Payment_report WHERE id = :id");
-            $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
-            $stmt->execute();
-            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            // Update user balance
-            $stmt = $this->pdo->prepare("UPDATE user SET Balance = Balance + :amount WHERE id = :id");
-            $stmt->bindParam(':amount', $payment['price'], PDO::PARAM_INT);
-            $stmt->bindParam(':id', $payment['id_user'], PDO::PARAM_INT);
-            $stmt->execute();
-            
-            $this->pdo->commit();
-            
-            // Send notification to user
-            $this->sendMessageToUser($payment['id_user'], "✅ پرداخت شما تایید شد\nمبلغ: " . number_format($payment['price']) . " تومان");
-            
-            return ['success' => true, 'message' => 'پرداخت تایید و موجودی افزایش یافت'];
-        } catch (Exception $e) {
-            $this->pdo->rollBack();
-            return ['success' => false, 'error' => 'خطا در تایید پرداخت: ' . $e->getMessage()];
+        // Use centralized function from bot_core.php (call global function)
+        if (function_exists('approvePayment')) {
+            $result = \approvePayment($payment_id, $notes);
+            if ($result) {
+                return ['success' => true, 'message' => 'پرداخت تایید و موجودی افزایش یافت'];
+            }
         }
+        return ['success' => false, 'error' => 'خطا در تایید پرداخت'];
     }
     
+    /**
+     * Reject payment - Uses centralized function from bot_core.php
+     * @deprecated Use rejectPayment() from bot_core.php directly
+     */
     public function rejectPayment($payment_id, $reason = '') {
-        $stmt = $this->pdo->prepare("UPDATE Payment_report SET payment_Status = 'rejected' WHERE id = :id");
-        $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
-        
-        if ($stmt->execute()) {
-            // Get user ID and send notification
-            $stmt = $this->pdo->prepare("SELECT id_user FROM Payment_report WHERE id = :id");
-            $stmt->bindParam(':id', $payment_id, PDO::PARAM_INT);
-            $stmt->execute();
-            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            $msg = "❌ پرداخت شما رد شد";
-            if ($reason) {
-                $msg .= "\nدلیل: " . $reason;
+        // Use centralized function from bot_core.php (call global function)
+        if (function_exists('rejectPayment')) {
+            $result = \rejectPayment($payment_id, $reason ?: 'رد شده توسط ادمین');
+            if ($result) {
+                return ['success' => true, 'message' => 'پرداخت رد شد'];
             }
-            $this->sendMessageToUser($payment['id_user'], $msg);
-            
-            return ['success' => true, 'message' => 'پرداخت رد شد'];
         }
-        
         return ['success' => false, 'error' => 'خطا در رد پرداخت'];
     }
     

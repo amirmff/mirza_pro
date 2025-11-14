@@ -260,9 +260,39 @@ function initTooltips() {
     });
 }
 
+// Dark Mode Toggle
+function initThemeToggle() {
+    const themeToggle = document.querySelector('.theme-toggle');
+    if (!themeToggle) return;
+    
+    // Get saved theme or default to dark
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
+    
+    themeToggle.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateThemeIcon(newTheme);
+    });
+}
+
+function updateThemeIcon(theme) {
+    const themeToggle = document.querySelector('.theme-toggle');
+    if (!themeToggle) return;
+    
+    themeToggle.innerHTML = theme === 'dark' 
+        ? '<span>🌙</span><span>حالت تاریک</span>'
+        : '<span>☀️</span><span>حالت روشن</span>';
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initTooltips();
+    initThemeToggle();
     
     // Add smooth scrolling
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {

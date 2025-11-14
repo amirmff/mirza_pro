@@ -116,9 +116,25 @@ switch ($action) {
     case 'set_domain':
         $domain = trim($_POST['domain'] ?? '');
         $email = trim($_POST['email'] ?? '');
-        if ($domain === '') { echo json_encode(['success'=>false,'message'=>'دامنه را وارد کنید']); break; }
+        if ($domain === '') { 
+            echo json_encode(['success'=>false,'message'=>'دامنه را وارد کنید']); 
+            break; 
+        }
+        
         // Update nginx server_name
-        [$code1, $out1] = run_cmd("sed -i 's/server_name .\+;/server_name {$domain};/' /etc/nginx/sites-available/mirza_pro && nginx -t && systemctl reload nginx");
+        $nginx_config = '/etc/nginx/sites-available/mirza_pro';
+        if (file_exists($nginx_config) && is_writable($nginx_config)) {
+            $nginx_content = file_get_contents($nginx_config);
+            $nginx_content = preg_replace(
+                "/server_name\s+[^;]+;/",
+                "server_name {$domain};",
+                $nginx_content
+            );
+            file_put_contents($nginx_config, $nginx_content);
+        }
+        
+        [$code1, $out1] = run_cmd("nginx -t && systemctl reload nginx 2>&1");
+        
         // Update config.php $domainhosts
         $cfg = __DIR__ . '/../../config.php';
         if (is_writable($cfg)) {
@@ -126,24 +142,95 @@ switch ($action) {
             $content = preg_replace("/\$domainhosts\s*=\s*'[^']*';/", "\$domainhosts = '{$domain}';", $content);
             file_put_contents($cfg, $content);
         }
-        // Optionally issue SSL immediately if email provided
+        
+        // Automatically issue SSL if domain provided
         $ssl_msg = '';
-        if ($email !== '') {
-            [$c, $o] = run_cmd("certbot --nginx -d {$domain} --redirect -n --agree-tos -m {$email}");
-            $ssl_msg = $o;
+        $ssl_success = false;
+        if ($domain !== '') {
+            $ssl_email = $email ?: "admin@{$domain}";
+            
+            // Ensure certbot is installed
+            [$install_code, $install_out] = run_cmd("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)");
+            
+            // Issue SSL certificate
+            [$ssl_code, $ssl_out] = run_cmd("certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$ssl_email} 2>&1");
+            
+            if ($ssl_code === 0) {
+                $ssl_success = true;
+                $ssl_msg = 'SSL certificate issued successfully';
+                
+                // Update webhook to HTTPS
+                require_once __DIR__ . '/../../config.php';
+                if (!empty($APIKEY)) {
+                    $webhook_url = "https://{$domain}/index.php";
+                    $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/setWebhook");
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                        CURLOPT_TIMEOUT => 10
+                    ]);
+                    curl_exec($ch);
+                    curl_close($ch);
+                }
+            } else {
+                $ssl_msg = 'SSL setup attempted but may need manual configuration: ' . implode("\n", array_slice($ssl_out, -5));
+            }
         }
-        log_activity($_SESSION['admin_id'], 'set_domain', "domain={$domain}");
-        echo json_encode(['success'=> $code1===0, 'message'=> $code1===0?'دامنه و Nginx بروزرسانی شد':'خطا در بروزرسانی Nginx', 'details'=>$out1, 'ssl'=>$ssl_msg]);
+        
+        log_activity($_SESSION['admin_id'], 'set_domain', "domain={$domain}, ssl=" . ($ssl_success ? 'installed' : 'failed'));
+        
+        $message = $code1 === 0 ? 'دامنه و Nginx بروزرسانی شد' : 'خطا در بروزرسانی Nginx';
+        if ($ssl_success) {
+            $message .= ' | SSL نصب شد';
+        }
+        
+        echo json_encode([
+            'success' => $code1 === 0,
+            'message' => $message,
+            'details' => $out1,
+            'ssl' => $ssl_msg,
+            'ssl_success' => $ssl_success
+        ]);
         break;
 
     case 'issue_ssl':
         $domain = trim($_POST['domain'] ?? '');
         $email = trim($_POST['email'] ?? '');
-        if ($domain==='' || $email==='') { echo json_encode(['success'=>false,'message'=>'دامنه و ایمیل لازم است']); break; }
+        if ($domain==='' || $email==='') { 
+            echo json_encode(['success'=>false,'message'=>'دامنه و ایمیل لازم است']); 
+            break; 
+        }
+        
         // Ensure certbot packages
-        run_cmd("apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx");
-        [$code, $out] = run_cmd("certbot --nginx -d {$domain} --redirect -n --agree-tos -m {$email}");
-        echo json_encode(['success'=> $code===0, 'message'=> $code===0?'SSL صادر شد':'خطا در صدور SSL', 'details'=>$out]);
+        [$install_code, $install_out] = run_cmd("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)");
+        
+        // Issue SSL certificate
+        [$code, $out] = run_cmd("certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$email} 2>&1");
+        
+        if ($code === 0) {
+            // Update webhook to HTTPS
+            require_once __DIR__ . '/../../config.php';
+            if (!empty($APIKEY)) {
+                $webhook_url = "https://{$domain}/index.php";
+                $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/setWebhook");
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                    CURLOPT_TIMEOUT => 10
+                ]);
+                curl_exec($ch);
+                curl_close($ch);
+            }
+            log_activity($_SESSION['admin_id'], 'ssl_install', "SSL installed for: {$domain}");
+        }
+        
+        echo json_encode([
+            'success' => $code === 0,
+            'message' => $code === 0 ? 'SSL صادر شد' : 'خطا در صدور SSL',
+            'details' => implode("\n", array_slice($out, -10))
+        ]);
         break;
 
     case 'renew_ssl':

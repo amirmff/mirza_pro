@@ -94,6 +94,9 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <strong><?php echo htmlspecialchars($admin['username'] ?? 'Admin'); ?></strong>
             <small><?php echo htmlspecialchars($admin['rule'] ?? 'Administrator'); ?></small>
         </div>
+        <button class="theme-toggle" style="width: 100%; margin-bottom: 10px;">
+            <span>🌙</span><span>حالت تاریک</span>
+        </button>
         <a href="/webpanel/logout.php" class="btn-logout">خروج</a>
     </div>
 </aside>

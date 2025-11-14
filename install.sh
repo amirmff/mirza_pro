@@ -824,49 +824,91 @@ print_completion() {
                 curl -4 -s --max-time 3 icanhazip.com 2>/dev/null | grep -oE '^[0-9.]+$' || \
                 echo "YOUR_SERVER_IP")
     
+    # Load database credentials
+    if [ -f /root/.mirza_db_credentials ]; then
+        source /root/.mirza_db_credentials
+    fi
+    
+    # Load MySQL root password
+    MYSQL_ROOT_PASS=""
+    if [ -f /root/.mysql_root_password ]; then
+        MYSQL_ROOT_PASS=$(cat /root/.mysql_root_password 2>/dev/null || echo "")
+        if [ "$MYSQL_ROOT_PASS" = "EXISTING_MYSQL=true" ]; then
+            MYSQL_ROOT_PASS="(Using existing MySQL installation)"
+        fi
+    fi
+    
     echo ""
-    echo -e "${GREEN}=========================================="
-    echo "  Installation Complete!"
-    echo -e "==========================================${NC}"
+    echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║           ${CYAN}✨ Installation Complete! ✨${GREEN}                  ║${NC}"
+    echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${BLUE}Next Steps:${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}📋 IMPORTANT CREDENTIALS - SAVE THIS INFORMATION${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "1. Access the web panel:"
+    
+    if [ -n "${DB_NAME:-}" ] && [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ]; then
+        echo -e "${BLUE}📊 Database Credentials:${NC}"
+        echo -e "   ${GREEN}Database Name:${NC}     ${DB_NAME}"
+        echo -e "   ${GREEN}Database User:${NC}     ${DB_USER}"
+        echo -e "   ${GREEN}Database Password:${NC} ${DB_PASSWORD}"
+        echo ""
+    fi
+    
+    if [ -n "$MYSQL_ROOT_PASS" ] && [ "$MYSQL_ROOT_PASS" != "(Using existing MySQL installation)" ]; then
+        echo -e "${BLUE}🔐 MySQL Root Password:${NC}"
+        echo -e "   ${GREEN}Password:${NC}          ${MYSQL_ROOT_PASS}"
+        echo ""
+    elif [ "$MYSQL_ROOT_PASS" = "(Using existing MySQL installation)" ]; then
+        echo -e "${BLUE}🔐 MySQL:${NC}"
+        echo -e "   ${YELLOW}Using existing MySQL installation${NC}"
+        echo ""
+    fi
+    
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${CYAN}🌐 Access Information:${NC}"
+    echo ""
     if [ "$HTTP_PORT" = "80" ]; then
-        echo "   http://$SERVER_IP/webpanel/"
+        echo -e "   ${GREEN}Web Panel URL:${NC}     http://$SERVER_IP/webpanel/"
+        echo -e "   ${GREEN}Setup Wizard:${NC}       http://$SERVER_IP/webpanel/setup.php"
     else
-        echo "   http://$SERVER_IP:$HTTP_PORT/webpanel/"
+        echo -e "   ${GREEN}Web Panel URL:${NC}     http://$SERVER_IP:$HTTP_PORT/webpanel/"
+        echo -e "   ${GREEN}Setup Wizard:${NC}       http://$SERVER_IP:$HTTP_PORT/webpanel/setup.php"
     fi
     echo ""
-    echo "2. Complete the setup wizard with:"
-    echo "   - Telegram Bot Token"
-    echo "   - Admin User ID"
-    echo "   - Domain name (optional)"
-    echo ""
-    echo "3. Database credentials (saved securely):"
-    echo "   /root/.mirza_db_credentials"
-    echo ""
-    echo "4. MySQL root password:"
-    echo "   /root/.mysql_root_password"
-    echo ""
-    echo -e "${YELLOW}For SSL/HTTPS setup:${NC}"
-    echo "   Use the web panel after initial setup"
-    echo ""
-    echo -e "${BLUE}Port Configuration:${NC}"
-    echo "   HTTP:  $HTTP_PORT"
+    echo -e "${CYAN}⚙️  Port Configuration:${NC}"
+    echo -e "   ${GREEN}HTTP Port:${NC}            $HTTP_PORT"
     if [ ! -z "$HTTPS_PORT" ]; then
-        echo "   HTTPS: $HTTPS_PORT"
+        echo -e "   ${GREEN}HTTPS Port:${NC}           $HTTPS_PORT"
+    else
+        echo -e "   ${YELLOW}HTTPS:${NC}               Not configured (will be set up via web panel)"
     fi
     echo ""
-    echo -e "${BLUE}Management:${NC}"
-    echo -e "   ${GREEN}mirza${NC}                               - Open CLI management menu"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}📝 Next Steps:${NC}"
     echo ""
-    echo -e "${BLUE}Or use these commands directly:${NC}"
-    echo "   supervisorctl status mirza_bot      - Check bot status"
-    echo "   supervisorctl restart mirza_bot     - Restart bot"
-    echo "   tail -f /var/log/mirza_bot.log      - View bot logs"
+    echo "   1. Access the setup wizard URL above"
+    echo "   2. Enter your Telegram Bot Token (from @BotFather)"
+    echo "   3. Enter your Admin User ID (from @userinfobot)"
+    echo "   4. Enter domain name (optional - for SSL)"
+    echo "   5. Complete the setup - bot will start automatically"
     echo ""
-    echo -e "${GREEN}Installation log: $LOG_FILE${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}🛠️  Management Commands:${NC}"
+    echo ""
+    echo -e "   ${GREEN}mirza${NC}                    - Open interactive CLI menu"
+    echo "   supervisorctl status mirza_bot   - Check bot status"
+    echo "   supervisorctl restart mirza_bot  - Restart bot"
+    echo "   tail -f /var/log/mirza_bot.log   - View bot logs"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✅ Installation log saved to: $LOG_FILE${NC}"
+    echo ""
+    echo -e "${CYAN}💡 Tip:${NC} All credentials are also saved in:"
+    echo "   /root/.mirza_db_credentials"
+    echo "   /root/.mysql_root_password"
     echo ""
 }
 

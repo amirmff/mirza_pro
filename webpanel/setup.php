@@ -154,17 +154,121 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             
+            // Update config.php with bot token and admin ID
+            $config_file = __DIR__ . '/../config.php';
+            if (file_exists($config_file) && is_writable($config_file)) {
+                $config_content = file_get_contents($config_file);
+                
+                // Update bot token
+                $config_content = preg_replace(
+                    "/\\\$APIKEY\s*=\s*'[^']*';/",
+                    "\$APIKEY = '{$_SESSION['bot_token']}';",
+                    $config_content
+                );
+                
+                // Update admin ID
+                $config_content = preg_replace(
+                    "/\\\$adminnumber\s*=\s*'[^']*';/",
+                    "\$adminnumber = '{$_SESSION['admin_id']}';",
+                    $config_content
+                );
+                
+                // Update domain if provided
+                if (!empty($_SESSION['domain'])) {
+                    $config_content = preg_replace(
+                        "/\\\$domainhosts\s*=\s*'[^']*';/",
+                        "\$domainhosts = '{$_SESSION['domain']}';",
+                        $config_content
+                    );
+                }
+                
+                // Update bot username (get from Telegram API)
+                $bot_info = @file_get_contents("https://api.telegram.org/bot{$_SESSION['bot_token']}/getMe");
+                if ($bot_info) {
+                    $bot_data = json_decode($bot_info, true);
+                    if ($bot_data && $bot_data['ok'] && isset($bot_data['result']['username'])) {
+                        $bot_username = $bot_data['result']['username'];
+                        $config_content = preg_replace(
+                            "/\\\$usernamebot\s*=\s*'[^']*';/",
+                            "\$usernamebot = '@{$bot_username}';",
+                            $config_content
+                        );
+                    }
+                }
+                
+                file_put_contents($config_file, $config_content);
+            }
+            
+            // Update setting table with admin ID and bot token
+            try {
+                // Check if setting table exists and has adminnumber column
+                $setting_check = $pdo->query("SHOW COLUMNS FROM setting LIKE 'adminnumber'")->fetch();
+                if ($setting_check) {
+                    $pdo->exec("UPDATE setting SET adminnumber = '{$_SESSION['admin_id']}' WHERE id = 1");
+                }
+            } catch (Exception $e) {
+                // Table might not exist yet, that's okay
+            }
+            
             // Set webhook to index.php (Telegram updates handler)
-            $webhook_url = !empty($_SESSION['domain']) ? 
-                "https://{$_SESSION['domain']}/index.php" : 
-                (isset($_SERVER['SERVER_ADDR']) ? "http://{$_SERVER['SERVER_ADDR']}/index.php" : '');
-            if (!empty($webhook_url)) {
+            $webhook_url = '';
+            if (!empty($_SESSION['domain'])) {
+                // If domain provided, use HTTPS
+                $webhook_url = "https://{$_SESSION['domain']}/index.php";
+            } else {
+                // Fallback to HTTP with server IP
+                $server_ip = $_SERVER['SERVER_ADDR'] ?? (gethostbyname(gethostname()) ?: 'localhost');
+                $http_port = 80; // Default, could be detected from nginx config
+                $webhook_url = "http://{$server_ip}/index.php";
+            }
+            
+            if (!empty($webhook_url) && !empty($_SESSION['bot_token'])) {
                 $ch = curl_init("https://api.telegram.org/bot{$_SESSION['bot_token']}/setWebhook");
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, ['url' => $webhook_url]);
-                curl_exec($ch);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                    CURLOPT_TIMEOUT => 10
+                ]);
+                $webhook_response = curl_exec($ch);
+                $webhook_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 curl_close($ch);
+                
+                // Log webhook result
+                if ($webhook_http_code === 200) {
+                    $webhook_data = json_decode($webhook_response, true);
+                    if (!($webhook_data['ok'] ?? false)) {
+                        error_log("Webhook setup warning: " . ($webhook_data['description'] ?? 'Unknown error'));
+                    }
+                }
+            }
+            
+            // Start bot via supervisor
+            if (function_exists('exec')) {
+                @exec('supervisorctl reread 2>&1', $supervisor_out, $supervisor_code);
+                @exec('supervisorctl update 2>&1', $supervisor_out, $supervisor_code);
+                @exec('supervisorctl start mirza_bot 2>&1', $supervisor_out, $supervisor_code);
+                sleep(2); // Give bot time to start
+            }
+            
+            // If domain provided, attempt SSL setup
+            if (!empty($_SESSION['domain'])) {
+                // Update nginx server_name
+                $nginx_config = '/etc/nginx/sites-available/mirza_pro';
+                if (file_exists($nginx_config) && is_writable($nginx_config)) {
+                    $nginx_content = file_get_contents($nginx_config);
+                    $nginx_content = preg_replace(
+                        "/server_name\s+[^;]+;/",
+                        "server_name {$_SESSION['domain']};",
+                        $nginx_content
+                    );
+                    file_put_contents($nginx_config, $nginx_content);
+                    @exec('nginx -t && systemctl reload nginx 2>&1');
+                }
+                
+                // Attempt SSL certificate (non-blocking, will complete in background)
+                $email = "admin@{$_SESSION['domain']}";
+                @exec("certbot --nginx -d {$_SESSION['domain']} --redirect --non-interactive --agree-tos -m {$email} 2>&1 > /dev/null &");
             }
             
             // Remove setup flag
