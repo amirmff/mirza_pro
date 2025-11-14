@@ -19,7 +19,7 @@ $page_title = 'مدیریت ربات';
 $active_page = 'bot_management';
 
 // Get bot status (webhook-based - check webhook instead of process)
-$bot_status = ['running' => false, 'webhook_active' => false, 'webhook_url' => ''];
+$bot_status = ['running' => false, 'webhook_active' => false, 'webhook_url' => '', 'pending_updates' => 0, 'last_error' => ''];
 if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
     $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/getWebhookInfo");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -33,20 +33,7 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
         $bot_status['webhook_url'] = $webhook_info['url'] ?? '';
         $bot_status['running'] = $bot_status['webhook_active']; // Webhook active = bot running
         $bot_status['pending_updates'] = $webhook_info['pending_update_count'] ?? 0;
-    }
-}
-
-// Get webhook info
-$webhook_info = [];
-if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
-    $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/getWebhookInfo");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    $response = curl_exec($ch);
-    curl_close($ch);
-    $data = json_decode($response, true);
-    if ($data['ok'] ?? false) {
-        $webhook_info = $data['result'];
+        $bot_status['last_error'] = $webhook_info['last_error_message'] ?? '';
     }
 }
 ?>
@@ -94,8 +81,12 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
                         <?php if ($bot_status['webhook_active']): ?>
                             <table style="width: 100%; font-size: 12px;">
                                 <tr><td><strong>URL:</strong></td><td style="word-break: break-all;"><?php echo htmlspecialchars($bot_status['webhook_url']); ?></td></tr>
-                                <tr><td><strong>پیام‌های در انتظار:</strong></td><td><?php echo $bot_status['pending_updates'] ?? 0; ?></td></tr>
+                                <tr><td><strong>پیام‌های در انتظار:</strong></td><td><?php echo $bot_status['pending_updates']; ?></td></tr>
+                                <?php if (!empty($bot_status['last_error'])): ?>
+                                <tr><td><strong>آخرین خطا:</strong></td><td><span style="color: #e74c3c; font-size: 11px;"><?php echo htmlspecialchars($bot_status['last_error']); ?></span></td></tr>
+                                <?php else: ?>
                                 <tr><td><strong>وضعیت:</strong></td><td><span style="color: #27ae60;">✅ فعال</span></td></tr>
+                                <?php endif; ?>
                             </table>
                         <?php else: ?>
                             <p style="text-align: center; color: #999; padding: 20px;">Webhook تنظیم نشده است<br><small>برای فعال‌سازی، دامنه و SSL را تنظیم کنید</small></p>
