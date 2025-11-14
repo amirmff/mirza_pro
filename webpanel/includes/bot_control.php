@@ -297,7 +297,9 @@ switch ($action) {
                 }
             }
         } else {
-            $ssl_msg = '⚠ SSL setup failed: ' . implode("\n", array_slice($ssl_out, -3));
+            // $ssl_out is a string, get last 3 lines
+            $ssl_lines = explode("\n", $ssl_out);
+            $ssl_msg = '⚠ SSL setup failed: ' . implode("\n", array_slice($ssl_lines, -3));
         }
         
         log_activity($_SESSION['admin_id'], 'set_domain', "domain={$domain}, ssl=" . ($ssl_success ? 'installed' : 'failed'));
@@ -354,10 +356,12 @@ switch ($action) {
         }
         
         ob_clean();
+        // $out is a string, get last 10 lines
+        $out_lines = explode("\n", $out);
         echo json_encode([
             'success' => $code === 0,
             'message' => $code === 0 ? 'SSL صادر شد' : 'خطا در صدور SSL',
-            'details' => implode("\n", array_slice($out, -10))
+            'details' => implode("\n", array_slice($out_lines, -10))
         ]);
         exit;
 
