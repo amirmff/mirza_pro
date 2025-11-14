@@ -183,6 +183,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Perform the update
             $updater->update();
             
+            // Verify the update worked by checking the file
+            $verify_content = file_get_contents($config_file);
+            $update_success = true;
+            
+            // Check if bot token was updated in main section
+            if (strpos($verify_content, '$pdo = new PDO') !== false) {
+                $main_section = substr($verify_content, strpos($verify_content, '$pdo = new PDO'));
+                if (strpos($main_section, '$APIKEY = \'') === false || strpos($main_section, $_SESSION['bot_token']) === false) {
+                    error_log("Warning: Bot token may not have been updated in main config section");
+                    $update_success = false;
+                }
+                if (strpos($main_section, '$adminnumber = \'') === false || strpos($main_section, $_SESSION['admin_id']) === false) {
+                    error_log("Warning: Admin ID may not have been updated in main config section");
+                    $update_success = false;
+                }
+            }
+            
+            if (!$update_success) {
+                error_log("Config update verification failed - some values may not have been updated");
+            }
+            
             // Update setting table with admin ID and bot token
             try {
                 // Check if setting table exists and has adminnumber column

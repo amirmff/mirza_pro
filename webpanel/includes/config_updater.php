@@ -2,6 +2,7 @@
 /**
  * Config File Updater
  * Properly updates config.php with setup wizard values
+ * Updates ALL instances of variables (both early return and main section)
  * Includes syntax validation to prevent corruption
  */
 
@@ -23,6 +24,7 @@ class ConfigUpdater {
     
     /**
      * Update config.php with all set values
+     * Updates ALL instances of each variable (both early return and main section)
      */
     public function update() {
         if (!file_exists($this->config_file)) {
@@ -34,7 +36,6 @@ class ConfigUpdater {
         }
         
         if (!is_writable($this->config_file)) {
-            // Try to fix permissions automatically
             $real_path = realpath($this->config_file);
             @chmod($real_path, 0664);
             
@@ -57,35 +58,33 @@ class ConfigUpdater {
         $original_content = file_get_contents($this->config_file);
         $content = $original_content;
         
-        // Update each value with careful replacement
+        // Update each value - replace ALL instances (both early return and main section)
         foreach ($this->values as $var_name => $value) {
             $escaped_value = addslashes($value);
             
-            // Pattern to match: $VARNAME = 'anything';
-            // Capture groups: 1=variable and equals, 2=quote, 3=value, 4=quote and semicolon
+            // Pattern to match: $VARNAME = 'anything'; (matches both single and double quotes)
+            // This will match ALL instances in the file
             $pattern = "/(\\\${$var_name}\s*=\s*)(['\"])([^'\"]*)(\\2;)/";
             
-            // Build replacement string carefully
+            // Replacement: keep the variable declaration, replace only the value
             $replacement = '${1}' . "'" . $escaped_value . "';";
             
-            // Perform replacement
+            // Perform replacement (this replaces ALL matches)
             $new_content = preg_replace($pattern, $replacement, $content);
             
-            // Validate that replacement worked correctly
             if ($new_content === null) {
                 throw new Exception("Regex error while updating {$var_name}");
             }
             
-            // Verify the replacement actually changed something and is valid
+            // If no change, try alternative pattern (for different quote styles)
             if ($new_content === $content) {
-                // No change - maybe the pattern didn't match, try alternative
-                $alt_pattern = "/(\\\${$var_name}\s*=\s*['\"])[^'\"]*(['\"];)/";
-                $alt_replacement = '${1}' . $escaped_value . '${2}';
+                // Try with different quote handling
+                $alt_pattern = "/(\\\${$var_name}\s*=\s*['\"])([^'\"]*)(['\"];)/";
+                $alt_replacement = '${1}' . $escaped_value . '${3}';
                 $new_content = preg_replace($alt_pattern, $alt_replacement, $content);
                 
-                if ($new_content === $content || $new_content === null) {
-                    error_log("Warning: Could not find pattern to replace for {$var_name}");
-                    continue; // Skip this variable
+                if ($new_content === null) {
+                    throw new Exception("Regex error (alt pattern) while updating {$var_name}");
                 }
             }
             
@@ -102,7 +101,6 @@ class ConfigUpdater {
         @exec("php -l " . escapeshellarg($temp_file) . " 2>&1", $output, $return_code);
         
         if ($return_code !== 0) {
-            // Syntax error detected - restore original
             @unlink($temp_file);
             $error_msg = "Syntax error in updated config.php: " . implode("\n", $output);
             error_log($error_msg);
@@ -115,7 +113,7 @@ class ConfigUpdater {
             throw new Exception("Failed to replace config.php");
         }
         
-        // Verify updates
+        // Verify updates - check that at least the main section was updated
         $this->verify();
         
         return true;
@@ -123,16 +121,65 @@ class ConfigUpdater {
     
     /**
      * Verify that all values were updated correctly
+     * Checks the main config section (after line 80)
      */
     private function verify() {
         $content = file_get_contents($this->config_file);
+        $lines = explode("\n", $content);
         
-        foreach ($this->values as $var_name => $value) {
-            // Check if the value appears in the file
-            $pattern = "/\\\${$var_name}\s*=\s*['\"]" . preg_quote($value, '/') . "['\"];/";
-            if (!preg_match($pattern, $content)) {
-                error_log("Warning: Config update verification failed for {$var_name}");
+        // Find the main config section (after database connection, around line 84)
+        $main_section_start = false;
+        foreach ($lines as $i => $line) {
+            if (strpos($line, '$pdo = new PDO') !== false) {
+                $main_section_start = $i;
+                break;
             }
         }
+        
+        foreach ($this->values as $var_name => $value) {
+            // Check if the value appears in the main section
+            $found = false;
+            if ($main_section_start !== false) {
+                for ($i = $main_section_start; $i < count($lines) && $i < $main_section_start + 20; $i++) {
+                    if (strpos($lines[$i], '$' . $var_name) !== false && strpos($lines[$i], $value) !== false) {
+                        $found = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Also check with regex as fallback
+            if (!$found) {
+                $pattern = "/\\\${$var_name}\s*=\s*['\"]" . preg_quote($value, '/') . "['\"];/";
+                if (preg_match($pattern, $content)) {
+                    $found = true;
+                }
+            }
+            
+            if (!$found) {
+                error_log("Warning: Config update verification failed for {$var_name} - value not found in main section");
+            }
+        }
+    }
+    
+    /**
+     * Restart the bot after config update
+     */
+    public function restartBot() {
+        if (function_exists('exec')) {
+            @exec('supervisorctl stop mirza_bot 2>&1', $stop_out, $stop_code);
+            sleep(1);
+            @exec('supervisorctl start mirza_bot 2>&1', $start_out, $start_code);
+            sleep(2);
+            
+            // Verify bot started
+            @exec('supervisorctl status mirza_bot 2>&1', $status_out, $status_code);
+            if (!empty($status_out[0]) && strpos($status_out[0], 'RUNNING') === false) {
+                error_log("Warning: Bot may not have started after config update");
+                return false;
+            }
+            return true;
+        }
+        return false;
     }
 }

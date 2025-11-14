@@ -167,6 +167,25 @@ if (isset($APIKEY)) {
         </div>
     </div>
 
+    <!-- Bot Configuration -->
+    <div class="card">
+        <h3>تنظیمات ربات</h3>
+        <div style="display:flex;flex-direction:column;gap:15px;">
+            <div>
+                <label style="display:block;margin-bottom:5px;font-weight:500;">توکن ربات تلگرام *</label>
+                <input id="bot_token" type="text" class="form-control" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" value="<?php echo htmlspecialchars($APIKEY ?? ''); ?>">
+                <small style="color:#666;font-size:12px;">از @BotFather دریافت کنید</small>
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:5px;font-weight:500;">آیدی عددی ادمین *</label>
+                <input id="admin_id" type="text" class="form-control" placeholder="123456789" value="<?php echo htmlspecialchars($adminnumber ?? ''); ?>">
+                <small style="color:#666;font-size:12px;">از @userinfobot دریافت کنید</small>
+            </div>
+            <button class="btn btn-primary" onclick="updateBotConfig()">💾 ذخیره تنظیمات و راه‌اندازی مجدد ربات</button>
+            <div id="config-update-result" style="margin-top:10px;"></div>
+        </div>
+    </div>
+
     <!-- Domain & SSL -->
     <div class="card">
         <h3>دامنه و SSL</h3>
@@ -323,6 +342,51 @@ function clearLogs() {
     .catch(error => {
         hideLoading();
         showAlert('error', 'خطا در برقراری ارتباط با سرور');
+    });
+}
+
+function updateBotConfig() {
+    const bot_token = document.getElementById('bot_token').value.trim();
+    const admin_id = document.getElementById('admin_id').value.trim();
+    const domain = document.getElementById('domain')?.value.trim() || '';
+    
+    if (!bot_token || !admin_id) {
+        showAlert('error', 'لطفا توکن ربات و آیدی ادمین را وارد کنید');
+        return;
+    }
+    
+    if (!confirm('آیا از تغییر تنظیمات ربات و راه‌اندازی مجدد آن اطمینان دارید؟')) {
+        return;
+    }
+    
+    showLoading();
+    
+    const resultDiv = document.getElementById('config-update-result');
+    resultDiv.innerHTML = '<div style="color:#666;">در حال بروزرسانی...</div>';
+    
+    fetch('/webpanel/api/bot_config.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `action=update_config&bot_token=${encodeURIComponent(bot_token)}&admin_id=${encodeURIComponent(admin_id)}&domain=${encodeURIComponent(domain)}&csrf_token=<?php echo $auth->getCsrfToken(); ?>`
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            showAlert('success', data.message + (data.bot_restarted ? ' - ربات راه‌اندازی مجدد شد' : ' - لطفا ربات را دستی راه‌اندازی کنید'));
+            resultDiv.innerHTML = '<div style="color:#27ae60;padding:10px;background:#d4edda;border-radius:5px;">✓ تنظیمات با موفقیت بروزرسانی شد</div>';
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            showAlert('error', data.message);
+            resultDiv.innerHTML = '<div style="color:#e74c3c;padding:10px;background:#f8d7da;border-radius:5px;">✗ خطا: ' + data.message + '</div>';
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        showAlert('error', 'خطا در برقراری ارتباط با سرور');
+        resultDiv.innerHTML = '<div style="color:#e74c3c;padding:10px;background:#f8d7da;border-radius:5px;">✗ خطا در ارتباط</div>';
     });
 }
 
