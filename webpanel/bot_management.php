@@ -38,7 +38,7 @@ if ($return_code === 0 && !empty($output[0]) && strpos($output[0], 'RUNNING') !=
 
 // Get webhook info
 $webhook_info = [];
-if (!empty($APIKEY) && $APIKEY !== '{API_KEY}')) {
+if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
     $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/getWebhookInfo");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 5);
