@@ -297,19 +297,22 @@ switch ($action) {
         $domain = trim($_POST['domain'] ?? '');
         $email = trim($_POST['email'] ?? '');
         if ($domain==='' || $email==='') { 
+            ob_clean();
             echo json_encode(['success'=>false,'message'=>'دامنه و ایمیل لازم است']); 
-            break; 
+            exit; 
         }
         
-        // Ensure certbot packages
-        [$install_code, $install_out] = run_cmd("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)");
-        
-        // Issue SSL certificate
-        [$code, $out] = run_cmd("certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$email} 2>&1");
-        
-        if ($code === 0) {
+        try {
+            require_once __DIR__ . '/nginx_manager.php';
+            $nginx = new NginxManager();
+            
+            // Ensure domain is set in Nginx first
+            $nginx->updateDomain($domain);
+            
+            // Install SSL
+            $nginx->installSSL($domain, $email);
+            
             // Update webhook to HTTPS
-            // Get APIKEY from config without requiring full config.php load
             $config_content = file_get_contents(__DIR__ . '/../../config.php');
             preg_match("/\\\$APIKEY\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $matches);
             $bot_token = $matches[1] ?? '';
@@ -326,17 +329,22 @@ switch ($action) {
                 curl_exec($ch);
                 curl_close($ch);
             }
+            
             log_activity($_SESSION['admin_id'], 'ssl_install', "SSL installed for: {$domain}");
+            
+            ob_clean();
+            echo json_encode([
+                'success' => true,
+                'message' => 'SSL صادر شد و Webhook تنظیم شد'
+            ]);
+        } catch (Exception $e) {
+            error_log("SSL installation error: " . $e->getMessage());
+            ob_clean();
+            echo json_encode([
+                'success' => false,
+                'message' => 'خطا در صدور SSL: ' . $e->getMessage()
+            ]);
         }
-        
-        ob_clean();
-        // $out is a string, get last 10 lines
-        $out_lines = explode("\n", $out);
-        echo json_encode([
-            'success' => $code === 0,
-            'message' => $code === 0 ? 'SSL صادر شد' : 'خطا در صدور SSL',
-            'details' => implode("\n", array_slice($out_lines, -10))
-        ]);
         exit;
 
     case 'renew_ssl':
