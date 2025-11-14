@@ -43,13 +43,12 @@ class ConfigUpdater {
         foreach ($this->values as $var_name => $value) {
             $escaped = addslashes($value);
             
-            // Pattern that matches:
-            // $VARNAME = 'anything'; (including placeholders like {API_KEY}, {admin_number})
-            // $VARNAME = "anything";
-            // This pattern uses a non-greedy match to capture everything between quotes
-            $pattern = "/(\\\${$var_name}\s*=\s*)(['\"])(.*?)(\\2;)/s";
+            // Pattern that matches ANY value (placeholders, already-set values, etc.)
+            // Matches: $VARNAME = 'anything'; or $VARNAME = "anything";
+            // The pattern captures: variable declaration, quote type, any content, closing quote and semicolon
+            $pattern = "/(\\\${$var_name}\s*=\s*)(['\"])([^'\"]*)(\\2;)/";
             
-            // Replace with new value
+            // Replace with new value (always use single quotes for consistency)
             $replacement = '${1}\'' . $escaped . '\';';
             
             // Replace ALL instances
@@ -59,22 +58,35 @@ class ConfigUpdater {
                 throw new Exception("Regex error updating {$var_name}");
             }
             
-            // Verify replacement happened
+            // If no change, the value might already be correct, or pattern didn't match
             if ($new_content === $content) {
-                // Try alternative: match without quotes (for edge cases)
+                // Check if value is already set correctly
+                $check_pattern = "/\\\${$var_name}\s*=\s*['\"]" . preg_quote($escaped, '/') . "['\"];/";
+                if (preg_match($check_pattern, $content)) {
+                    // Value is already correct, skip
+                    continue;
+                }
+                
+                // Try alternative pattern (more flexible)
                 $alt_pattern = "/(\\\${$var_name}\s*=\s*)(['\"]?)([^;]*?)(['\"]?;)/";
                 $alt_replacement = '${1}\'' . $escaped . '\';';
                 $new_content = preg_replace($alt_pattern, $alt_replacement, $content);
                 
-                if ($new_content === null || $new_content === $content) {
-                    error_log("Warning: Could not update {$var_name} - pattern may not match. Line: " . $this->findVariableLine($content, $var_name));
-                    // Try one more time with a very simple pattern
+                if ($new_content === null) {
+                    throw new Exception("Regex error (alt) updating {$var_name}");
+                }
+                
+                if ($new_content === $content) {
+                    // Last resort: very simple pattern
                     $simple_pattern = "/\\\${$var_name}\s*=\s*[^;]+;/";
                     $simple_replacement = "\${$var_name} = '{$escaped}';";
                     $new_content = preg_replace($simple_pattern, $simple_replacement, $content);
                     
                     if ($new_content === null || $new_content === $content) {
-                        throw new Exception("Failed to update {$var_name}. Pattern did not match any instances.");
+                        $line_info = $this->findVariableLine($content, $var_name);
+                        error_log("Warning: Could not update {$var_name}. Line: {$line_info}");
+                        // Don't throw - continue with other variables
+                        continue;
                     }
                 }
             }
