@@ -662,6 +662,12 @@ NGINX_EOF
     chown www-data:www-data /etc/nginx/sites-available/mirza_pro
     chmod 664 /etc/nginx/sites-available/mirza_pro
     
+    # Allow www-data to run nginx commands without password
+    cat > /etc/sudoers.d/www-data-nginx <<'SUDOERS_EOF'
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/nginx, /bin/systemctl reload nginx, /bin/systemctl restart nginx
+SUDOERS_EOF
+    chmod 440 /etc/sudoers.d/www-data-nginx
+    
     # Test, enable and start Nginx with custom port
     run_with_spinner "Testing and starting Nginx on port $HTTP_PORT" \
         "nginx -t && systemctl enable nginx && systemctl start nginx"
