@@ -1,7 +1,7 @@
 <?php
 /**
- * Config File Updater - COMPLETE REWRITE
- * Safely updates config.php with proper validation
+ * Config File Updater - FIXED VERSION
+ * Properly handles placeholders and updates ALL instances
  */
 
 class ConfigUpdater {
@@ -39,20 +39,39 @@ class ConfigUpdater {
         $content = file_get_contents($this->config_file);
         $original = $content;
         
-        // Update each variable - replace ALL occurrences
+        // Update each variable - replace ALL occurrences including placeholders
         foreach ($this->values as $var_name => $value) {
             $escaped = addslashes($value);
             
-            // Pattern: $VARNAME = 'anything'; or $VARNAME = "anything";
-            // Replace ALL instances in the file
-            $patterns = [
-                "/(\\\${$var_name}\s*=\s*)['\"][^'\"]*['\"];/",
-                "/(\\\${$var_name}\s*=\s*\{[^}]+\};)/"
-            ];
+            // Pattern that matches:
+            // $VARNAME = 'anything'; (including placeholders like {API_KEY})
+            // $VARNAME = "anything";
+            // This pattern matches the variable declaration and any value (including braces)
+            $pattern = "/(\\\${$var_name}\s*=\s*)(['\"])([^'\"]*)(\\2;)/";
             
-            foreach ($patterns as $pattern) {
-                $content = preg_replace($pattern, '${1}\'' . $escaped . '\';', $content);
+            // Replace with new value
+            $replacement = '${1}\'' . $escaped . '\';';
+            
+            // Replace ALL instances
+            $new_content = preg_replace($pattern, $replacement, $content);
+            
+            if ($new_content === null) {
+                throw new Exception("Regex error updating {$var_name}");
             }
+            
+            // If no change, try more aggressive pattern
+            if ($new_content === $content) {
+                // Try pattern that matches placeholders with braces
+                $alt_pattern = "/(\\\${$var_name}\s*=\s*)(['\"]?)([^'\";]*)(['\"]?;)/";
+                $new_content = preg_replace($alt_pattern, '${1}\'' . $escaped . '\';', $content);
+                
+                if ($new_content === null || $new_content === $content) {
+                    error_log("Warning: Could not update {$var_name} - pattern may not match");
+                    continue;
+                }
+            }
+            
+            $content = $new_content;
         }
         
         // Validate syntax
