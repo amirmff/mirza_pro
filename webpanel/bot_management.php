@@ -225,42 +225,73 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
     }
     
     function updateBotConfig() {
+        console.log('updateBotConfig called');
         const bot_token = document.getElementById('bot_token').value.trim();
         const admin_id = document.getElementById('admin_id').value.trim();
         const domain = document.getElementById('domain')?.value.trim() || '';
+        
+        console.log('Values:', {bot_token: bot_token.substring(0,10)+'...', admin_id, domain});
         
         if (!bot_token || !admin_id) {
             showAlert('error', 'لطفا توکن ربات و آیدی ادمین را وارد کنید');
             return;
         }
         
-        if (!confirm('آیا از تغییر تنظیمات ربات و راه‌اندازی مجدد آن اطمینان دارید؟')) return;
+        if (!confirm('آیا از تغییر تنظیمات ربات و راه‌اندازی مجدد آن اطمینان دارید؟')) {
+            console.log('User cancelled');
+            return;
+        }
         
         showLoading();
         const resultDiv = document.getElementById('config-update-result');
+        if (!resultDiv) {
+            console.error('resultDiv not found!');
+            hideLoading();
+            return;
+        }
         resultDiv.innerHTML = '<div style="color:#666;padding:10px;">در حال بروزرسانی...</div>';
+        
+        const formData = `action=update_config&bot_token=${encodeURIComponent(bot_token)}&admin_id=${encodeURIComponent(admin_id)}&domain=${encodeURIComponent(domain)}&csrf_token=${csrfToken}`;
+        console.log('Sending request to /webpanel/api/bot_config.php');
         
         fetch('/webpanel/api/bot_config.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: `action=update_config&bot_token=${encodeURIComponent(bot_token)}&admin_id=${encodeURIComponent(admin_id)}&domain=${encodeURIComponent(domain)}&csrf_token=${csrfToken}`
+            body: formData
         })
-        .then(r => r.json())
+        .then(r => {
+            console.log('Response status:', r.status);
+            if (!r.ok) {
+                throw new Error('HTTP ' + r.status);
+            }
+            return r.text();
+        })
+        .then(text => {
+            console.log('Response text:', text.substring(0, 200));
+            try {
+                return JSON.parse(text);
+            } catch(e) {
+                console.error('JSON parse error:', e, 'Text:', text);
+                throw new Error('Invalid JSON response: ' + text.substring(0, 100));
+            }
+        })
         .then(data => {
+            console.log('Parsed data:', data);
             hideLoading();
             if (data.success) {
                 showAlert('success', data.message + (data.bot_restarted ? ' - ربات راه‌اندازی مجدد شد' : ''));
                 resultDiv.innerHTML = '<div style="color:#27ae60;padding:10px;background:#d4edda;border-radius:5px;">✓ تنظیمات با موفقیت بروزرسانی شد</div>';
                 setTimeout(() => location.reload(), 2000);
             } else {
-                showAlert('error', data.message);
-                resultDiv.innerHTML = '<div style="color:#e74c3c;padding:10px;background:#f8d7da;border-radius:5px;">✗ ' + data.message + '</div>';
+                showAlert('error', data.message || 'خطای نامشخص');
+                resultDiv.innerHTML = '<div style="color:#e74c3c;padding:10px;background:#f8d7da;border-radius:5px;">✗ ' + (data.message || 'خطا') + '</div>';
             }
         })
         .catch(e => {
+            console.error('Fetch error:', e);
             hideLoading();
-            showAlert('error', 'خطا در برقراری ارتباط');
-            resultDiv.innerHTML = '<div style="color:#e74c3c;padding:10px;background:#f8d7da;border-radius:5px;">✗ خطا در ارتباط</div>';
+            showAlert('error', 'خطا در برقراری ارتباط: ' + e.message);
+            resultDiv.innerHTML = '<div style="color:#e74c3c;padding:10px;background:#f8d7da;border-radius:5px;">✗ خطا: ' + e.message + '</div>';
         });
     }
     
