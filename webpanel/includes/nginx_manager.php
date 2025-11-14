@@ -176,11 +176,25 @@ NGINX_CONFIG;
      * Test Nginx configuration
      */
     public function testConfig() {
-        exec('nginx -t 2>&1', $output, $return_code);
+        // Try with sudo first (for PID file access)
+        exec('sudo nginx -t 2>&1', $output, $return_code);
+        
+        // If sudo fails, try without sudo and filter out PID warnings
         if ($return_code !== 0) {
+            exec('nginx -t 2>&1', $output2, $return_code2);
+            
+            // Check if it's just a PID permission error (syntax is actually OK)
+            $output_str = implode("\n", $output2);
+            if (strpos($output_str, 'syntax is ok') !== false && strpos($output_str, 'Permission denied') !== false) {
+                // Syntax is OK, just PID file permission issue - this is acceptable
+                return true;
+            }
+            
+            // Real syntax error
             $error = implode("\n", $output);
             throw new Exception("Nginx configuration test failed: {$error}");
         }
+        
         return true;
     }
     
@@ -189,11 +203,19 @@ NGINX_CONFIG;
      */
     public function reload() {
         $this->testConfig();
-        exec('systemctl reload nginx 2>&1', $output, $return_code);
+        
+        // Try reload with sudo first
+        exec('sudo systemctl reload nginx 2>&1', $output, $return_code);
+        
+        // If sudo fails, try without sudo
         if ($return_code !== 0) {
-            $error = implode("\n", $output);
-            throw new Exception("Failed to reload Nginx: {$error}");
+            exec('systemctl reload nginx 2>&1', $output2, $return_code2);
+            if ($return_code2 !== 0) {
+                $error = implode("\n", $output2 ?: $output);
+                throw new Exception("Failed to reload Nginx: {$error}");
+            }
         }
+        
         return true;
     }
     
