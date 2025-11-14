@@ -33,12 +33,29 @@ class ConfigUpdater {
         }
         
         if (!is_writable($this->config_file)) {
-            // Try to fix permissions automatically
+            // Try to fix permissions automatically using sudo/exec
             $real_path = realpath($this->config_file);
+            
+            // Try chmod first
             @chmod($real_path, 0664);
             
+            // If still not writable, try to change ownership (requires root/sudo)
             if (!is_writable($real_path)) {
-                throw new Exception("Config file not writable: " . $this->config_file . ". Please run: chown www-data:www-data " . $real_path . " && chmod 664 " . $real_path);
+                // Get current web server user
+                $web_user = 'www-data';
+                if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
+                    $process_user = posix_getpwuid(posix_geteuid());
+                    $web_user = $process_user['name'] ?? 'www-data';
+                }
+                
+                // Try to change ownership via exec (if we have permissions)
+                @exec("chown {$web_user}:{$web_user} " . escapeshellarg($real_path) . " 2>&1", $chown_out, $chown_code);
+                @chmod($real_path, 0664);
+                
+                // Check again
+                if (!is_writable($real_path)) {
+                    throw new Exception("Config file not writable: " . $this->config_file . ". Please run as root: chown www-data:www-data " . $real_path . " && chmod 664 " . $real_path);
+                }
             }
         }
         
