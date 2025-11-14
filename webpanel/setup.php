@@ -159,25 +159,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (file_exists($config_file) && is_writable($config_file)) {
                 $config_content = file_get_contents($config_file);
                 
-                // Update bot token (handle both placeholder and existing value formats)
+                // Escape values for safe replacement
+                $bot_token_escaped = addslashes($_SESSION['bot_token']);
+                $admin_id_escaped = addslashes($_SESSION['admin_id']);
+                $db_name_escaped = addslashes($_SESSION['db_name']);
+                $db_user_escaped = addslashes($_SESSION['db_user']);
+                $db_pass_escaped = addslashes($_SESSION['db_pass']);
+                
+                // Update bot token - replace ALL instances (both in early return and main section)
                 $config_content = preg_replace(
                     "/\\\$APIKEY\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$APIKEY = '{$_SESSION['bot_token']}';",
+                    "\$APIKEY = '{$bot_token_escaped}';",
                     $config_content
                 );
                 
-                // Update admin ID
+                // Update admin ID - replace ALL instances
                 $config_content = preg_replace(
                     "/\\\$adminnumber\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$adminnumber = '{$_SESSION['admin_id']}';",
+                    "\$adminnumber = '{$admin_id_escaped}';",
                     $config_content
                 );
                 
-                // Update domain if provided
+                // Update domain if provided - replace ALL instances
                 if (!empty($_SESSION['domain'])) {
+                    $domain_escaped = addslashes($_SESSION['domain']);
                     $config_content = preg_replace(
                         "/\\\$domainhosts\s*=\s*['\"][^'\"]*['\"];/",
-                        "\$domainhosts = '{$_SESSION['domain']}';",
+                        "\$domainhosts = '{$domain_escaped}';",
                         $config_content
                     );
                 }
@@ -188,40 +196,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $bot_data = json_decode($bot_info, true);
                     if ($bot_data && $bot_data['ok'] && isset($bot_data['result']['username'])) {
                         $bot_username = $bot_data['result']['username'];
+                        $bot_username_escaped = addslashes('@' . $bot_username);
                         $config_content = preg_replace(
                             "/\\\$usernamebot\s*=\s*['\"][^'\"]*['\"];/",
-                            "\$usernamebot = '@{$bot_username}';",
+                            "\$usernamebot = '{$bot_username_escaped}';",
                             $config_content
                         );
                     }
                 }
                 
-                // Also update database credentials if they're still placeholders
+                // Update database credentials - replace ALL instances
                 $config_content = preg_replace(
                     "/\\\$dbname\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$dbname = '{$_SESSION['db_name']}';",
+                    "\$dbname = '{$db_name_escaped}';",
                     $config_content
                 );
                 $config_content = preg_replace(
                     "/\\\$usernamedb\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$usernamedb = '{$_SESSION['db_user']}';",
+                    "\$usernamedb = '{$db_user_escaped}';",
                     $config_content
                 );
                 $config_content = preg_replace(
                     "/\\\$passworddb\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$passworddb = '{$_SESSION['db_pass']}';",
+                    "\$passworddb = '{$db_pass_escaped}';",
                     $config_content
                 );
                 
-                file_put_contents($config_file, $config_content);
+                // Write the updated content
+                $write_result = file_put_contents($config_file, $config_content);
                 
-                // Verify the update worked
+                if ($write_result === false) {
+                    error_log("Error: Failed to write config.php");
+                    throw new Exception("Failed to update config.php - check file permissions");
+                }
+                
+                // Verify the update worked by checking the main config section (line 84+)
                 $verify_content = file_get_contents($config_file);
-                if (strpos($verify_content, $_SESSION['bot_token']) === false) {
-                    error_log("Warning: config.php update may have failed - bot token not found in file");
+                // Check if token appears in the main config section (after line 80)
+                $lines = explode("\n", $verify_content);
+                $found_token = false;
+                foreach ($lines as $line) {
+                    if (strpos($line, '$APIKEY') !== false && strpos($line, $_SESSION['bot_token']) !== false) {
+                        $found_token = true;
+                        break;
+                    }
+                }
+                
+                if (!$found_token) {
+                    error_log("Warning: config.php update verification failed - bot token not found in main config section");
+                    // Try one more time with a more direct approach
+                    $config_content = file_get_contents($config_file);
+                    // Direct string replacement for the main section (after database connection)
+                    $main_section_pattern = "/(\\\$APIKEY\s*=\s*['\"])[^'\"]*(['\"];)/";
+                    $config_content = preg_replace($main_section_pattern, "\$1{$bot_token_escaped}\$2", $config_content);
+                    $main_section_pattern = "/(\\\$adminnumber\s*=\s*['\"])[^'\"]*(['\"];)/";
+                    $config_content = preg_replace($main_section_pattern, "\$1{$admin_id_escaped}\$2", $config_content);
+                    file_put_contents($config_file, $config_content);
                 }
             } else {
-                error_log("Error: config.php not writable or not found: " . $config_file);
+                $error_msg = "Error: config.php not writable or not found: " . $config_file;
+                error_log($error_msg);
+                throw new Exception($error_msg);
             }
             
             // Update setting table with admin ID and bot token
