@@ -18,21 +18,21 @@ if (!$currentAdmin || ($currentAdmin['rule'] ?? '') !== 'administrator') {
 $page_title = 'مدیریت ربات';
 $active_page = 'bot_management';
 
-// Get bot status
-$bot_status = ['running' => false, 'pid' => null, 'uptime' => null, 'memory' => null, 'cpu' => null];
-exec("supervisorctl status mirza_bot 2>&1", $output, $return_code);
-if ($return_code === 0 && !empty($output[0]) && strpos($output[0], 'RUNNING') !== false) {
-    $bot_status['running'] = true;
-    preg_match('/pid (\d+)/', $output[0], $matches);
-    if (!empty($matches[1])) {
-        $bot_status['pid'] = $matches[1];
-        exec("ps -p {$matches[1]} -o %mem,%cpu,etimes --no-headers 2>&1", $ps_output);
-        if (!empty($ps_output[0])) {
-            $parts = preg_split('/\s+/', trim($ps_output[0]));
-            $bot_status['memory'] = $parts[0] ?? 0;
-            $bot_status['cpu'] = $parts[1] ?? 0;
-            $bot_status['uptime'] = isset($parts[2]) ? gmdate("H:i:s", $parts[2]) : null;
-        }
+// Get bot status (webhook-based - check webhook instead of process)
+$bot_status = ['running' => false, 'webhook_active' => false, 'webhook_url' => ''];
+if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
+    $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/getWebhookInfo");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    $data = json_decode($response, true);
+    if ($data['ok'] ?? false) {
+        $webhook_info = $data['result'];
+        $bot_status['webhook_active'] = !empty($webhook_info['url'] ?? '');
+        $bot_status['webhook_url'] = $webhook_info['url'] ?? '';
+        $bot_status['running'] = $bot_status['webhook_active']; // Webhook active = bot running
+        $bot_status['pending_updates'] = $webhook_info['pending_update_count'] ?? 0;
     }
 }
 
@@ -75,43 +75,41 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
                 <!-- Status Cards -->
                 <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 30px;">
                     <div class="card">
-                        <h3>وضعیت ربات</h3>
+                        <h3>وضعیت ربات (Webhook)</h3>
                         <div style="text-align: center; padding: 20px;">
-                            <?php if ($bot_status['running']): ?>
+                            <?php if ($bot_status['webhook_active']): ?>
                                 <div style="font-size: 48px; color: #27ae60; margin-bottom: 10px;">✅</div>
                                 <div class="badge badge-success" style="font-size: 16px; padding: 8px 16px;">فعال</div>
-                                <?php if ($bot_status['pid']): ?>
-                                    <p style="margin-top: 10px; color: #666; font-size: 12px;">PID: <?php echo $bot_status['pid']; ?></p>
-                                <?php endif; ?>
+                                <p style="margin-top: 10px; color: #666; font-size: 11px; word-break: break-all;"><?php echo htmlspecialchars($bot_status['webhook_url']); ?></p>
                             <?php else: ?>
                                 <div style="font-size: 48px; color: #e74c3c; margin-bottom: 10px;">❌</div>
                                 <div class="badge badge-danger" style="font-size: 16px; padding: 8px 16px;">غیرفعال</div>
+                                <p style="margin-top: 10px; color: #999; font-size: 12px;">Webhook تنظیم نشده است</p>
                             <?php endif; ?>
                         </div>
                     </div>
                     
-                    <?php if ($bot_status['running']): ?>
                     <div class="card">
-                        <h3>اطلاعات پردازش</h3>
-                        <table style="width: 100%;">
-                            <tr><td><strong>زمان فعالیت:</strong></td><td><?php echo $bot_status['uptime'] ?? 'N/A'; ?></td></tr>
-                            <tr><td><strong>مصرف حافظه:</strong></td><td><?php echo number_format($bot_status['memory'], 1); ?>%</td></tr>
-                            <tr><td><strong>مصرف CPU:</strong></td><td><?php echo number_format($bot_status['cpu'], 1); ?>%</td></tr>
-                        </table>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <div class="card">
-                        <h3>وضعیت Webhook</h3>
-                        <?php if (!empty($webhook_info)): ?>
+                        <h3>اطلاعات Webhook</h3>
+                        <?php if ($bot_status['webhook_active']): ?>
                             <table style="width: 100%; font-size: 12px;">
-                                <tr><td><strong>URL:</strong></td><td style="word-break: break-all;"><?php echo htmlspecialchars($webhook_info['url'] ?? 'Not Set'); ?></td></tr>
-                                <tr><td><strong>آخرین خطا:</strong></td><td><?php echo !empty($webhook_info['last_error_message']) ? '<span style="color: #e74c3c;">' . htmlspecialchars($webhook_info['last_error_message']) . '</span>' : '<span style="color: #27ae60;">بدون خطا</span>'; ?></td></tr>
-                                <tr><td><strong>پیام‌های در انتظار:</strong></td><td><?php echo $webhook_info['pending_update_count'] ?? 0; ?></td></tr>
+                                <tr><td><strong>URL:</strong></td><td style="word-break: break-all;"><?php echo htmlspecialchars($bot_status['webhook_url']); ?></td></tr>
+                                <tr><td><strong>پیام‌های در انتظار:</strong></td><td><?php echo $bot_status['pending_updates'] ?? 0; ?></td></tr>
+                                <tr><td><strong>وضعیت:</strong></td><td><span style="color: #27ae60;">✅ فعال</span></td></tr>
                             </table>
                         <?php else: ?>
-                            <p style="text-align: center; color: #999;">اطلاعات وب‌هوک در دسترس نیست</p>
+                            <p style="text-align: center; color: #999; padding: 20px;">Webhook تنظیم نشده است<br><small>برای فعال‌سازی، دامنه و SSL را تنظیم کنید</small></p>
                         <?php endif; ?>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>راهنمای فعال‌سازی</h3>
+                        <ol style="font-size: 12px; line-height: 1.8; padding-right: 20px;">
+                            <li>توکن ربات و آیدی ادمین را وارد کنید</li>
+                            <li>دامنه خود را وارد کنید</li>
+                            <li>SSL به صورت خودکار نصب می‌شود</li>
+                            <li>Webhook به صورت خودکار تنظیم می‌شود</li>
+                        </ol>
                     </div>
                 </div>
 
@@ -134,21 +132,17 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
                     </div>
                 </div>
 
-                <!-- Bot Control -->
+                <!-- Bot Control (Webhook-based) -->
                 <div class="card" style="margin-bottom: 20px;">
-                    <h3>🎮 کنترل ربات</h3>
+                    <h3>🎮 کنترل Webhook</h3>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <?php if ($bot_status['running']): ?>
-                            <button onclick="controlBot('stop')" class="btn btn-danger">⏹️ توقف ربات</button>
-                            <button onclick="controlBot('restart')" class="btn btn-warning">🔄 راه‌اندازی مجدد</button>
-                        <?php else: ?>
-                            <button onclick="controlBot('start')" class="btn btn-success">▶️ شروع ربات</button>
-                        <?php endif; ?>
                         <button onclick="updateWebhook()" class="btn btn-primary">🔗 تنظیم Webhook</button>
                         <button onclick="refreshWebhook()" class="btn btn-secondary">ℹ️ وضعیت Webhook</button>
-                        <button onclick="showLogs()" class="btn btn-secondary">📋 نمایش لاگ‌ها</button>
-                        <button onclick="clearLogs()" class="btn btn-secondary">🗑️ پاک کردن لاگ‌ها</button>
+                        <button onclick="deleteWebhook()" class="btn btn-danger">🗑️ حذف Webhook</button>
                     </div>
+                    <p style="margin-top: 10px; color: #666; font-size: 12px;">
+                        ℹ️ این ربات بر اساس Webhook کار می‌کند. پس از تنظیم دامنه و SSL، Webhook به صورت خودکار فعال می‌شود.
+                    </p>
                 </div>
 
                 <!-- Domain & SSL -->
@@ -210,13 +204,13 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
         setTimeout(() => alertDiv.remove(), 5000);
     }
     
-    function controlBot(action) {
-        if (!window.confirm(`آیا از ${action==='stop'?'توقف':action==='start'?'شروع':'راه‌اندازی مجدد'} ربات اطمینان دارید؟`)) return;
+    function deleteWebhook() {
+        if (!window.confirm('آیا از حذف Webhook اطمینان دارید؟ ربات دیگر پیام‌ها را دریافت نخواهد کرد.')) return;
         showLoading();
         fetch('/webpanel/includes/bot_control.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: `action=${action}&csrf_token=${csrfToken}`
+            body: `action=delete_webhook&csrf_token=${csrfToken}`
         })
         .then(r => r.json())
         .then(data => {

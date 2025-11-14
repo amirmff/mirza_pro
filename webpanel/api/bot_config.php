@@ -86,16 +86,23 @@ switch ($action) {
             curl_exec($ch);
             curl_close($ch);
             
-            // Restart bot
-            $bot_restarted = $updater->restartBot();
+            // Webhook-based bot - no need to restart supervisor
+            // Just verify webhook was set
+            $webhook_check = curl_init("https://api.telegram.org/bot{$bot_token}/getWebhookInfo");
+            curl_setopt($webhook_check, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($webhook_check, CURLOPT_TIMEOUT, 5);
+            $webhook_info = json_decode(curl_exec($webhook_check), true);
+            curl_close($webhook_check);
+            
+            $webhook_set = ($webhook_info['ok'] ?? false) && !empty($webhook_info['result']['url'] ?? '');
             
             log_activity($currentAdmin['id_admin'], 'bot_config_update', "Updated bot configuration");
             
             ob_clean();
             echo json_encode([
                 'success' => true,
-                'message' => 'Configuration updated successfully',
-                'bot_restarted' => $bot_restarted,
+                'message' => 'Configuration updated successfully' . ($webhook_set ? ' - Webhook فعال است' : ''),
+                'webhook_set' => $webhook_set,
                 'webhook_url' => $webhook_url
             ]);
             exit;

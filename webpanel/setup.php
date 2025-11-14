@@ -264,57 +264,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
-            // Start bot via supervisor (must happen after config.php is updated)
-            if (function_exists('exec')) {
-                // Stop bot first if running
-                @exec('supervisorctl stop mirza_bot 2>&1');
-                sleep(1);
-                
-                // Reread and update supervisor config
-                @exec('supervisorctl reread 2>&1');
-                @exec('supervisorctl update 2>&1');
-                
-                // Start bot
-                @exec('supervisorctl start mirza_bot 2>&1', $supervisor_out, $supervisor_code);
-                sleep(2);
-                
-                // Verify bot started - check multiple times with retries
-                $bot_running = false;
-                for ($i = 0; $i < 5; $i++) {
-                    @exec('supervisorctl status mirza_bot 2>&1', $status_out, $status_code);
-                    if (!empty($status_out[0])) {
-                        $status_line = $status_out[0];
-                        if (strpos($status_line, 'RUNNING') !== false) {
-                            $bot_running = true;
-                            break;
-                        }
-                    }
-                    sleep(1);
-                }
-                
-                if (!$bot_running) {
-                    error_log("Bot may not have started. Status: " . implode("\n", $status_out));
-                    // Try one more time
-                    @exec('supervisorctl start mirza_bot 2>&1');
-                    sleep(2);
-                }
-            }
-            
-            // If domain provided, attempt SSL setup (after nginx reload)
+            // Webhook-based bot - no supervisor needed
+            // If domain provided, automatically install SSL and set webhook
             if (!empty($_SESSION['domain'])) {
+                $domain = $_SESSION['domain'];
+                $email = "admin@{$domain}";
+                
+                // Update nginx server_name first
+                $nginx_config = '/etc/nginx/sites-available/mirza_pro';
+                if (file_exists($nginx_config) && is_writable($nginx_config)) {
+                    $nginx_content = file_get_contents($nginx_config);
+                    $nginx_content = preg_replace(
+                        "/server_name\s+[^;]+;/",
+                        "server_name {$domain};",
+                        $nginx_content
+                    );
+                    file_put_contents($nginx_config, $nginx_content);
+                    @exec('nginx -t && systemctl reload nginx 2>&1');
+                }
+                
                 // Ensure certbot is installed
-                $email = "admin@{$_SESSION['domain']}";
                 @exec("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)", $certbot_check);
                 
-                // Issue SSL certificate (run in background but log output)
-                $ssl_log = '/tmp/ssl_install_' . time() . '.log';
-                @exec("certbot --nginx -d {$_SESSION['domain']} --redirect --non-interactive --agree-tos -m {$email} > {$ssl_log} 2>&1 &");
+                // Issue SSL certificate
+                @exec("certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$email} 2>&1", $ssl_output, $ssl_code);
                 
-                // Wait a moment then check if SSL was successful
-                sleep(2);
-                if (file_exists("/etc/letsencrypt/live/{$_SESSION['domain']}/cert.pem")) {
-                    // SSL installed successfully, update webhook to HTTPS
-                    $webhook_url = "https://{$_SESSION['domain']}/index.php";
+                if ($ssl_code === 0 || file_exists("/etc/letsencrypt/live/{$domain}/cert.pem")) {
+                    // SSL installed successfully, set webhook to HTTPS
+                    $webhook_url = "https://{$domain}/index.php";
                     $ch = curl_init("https://api.telegram.org/bot{$_SESSION['bot_token']}/setWebhook");
                     curl_setopt_array($ch, [
                         CURLOPT_RETURNTRANSFER => true,
@@ -322,9 +299,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         CURLOPT_POSTFIELDS => ['url' => $webhook_url],
                         CURLOPT_TIMEOUT => 10
                     ]);
-                    curl_exec($ch);
+                    $webhook_response = curl_exec($ch);
+                    $webhook_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                     curl_close($ch);
+                    
+                    if ($webhook_http_code === 200) {
+                        $webhook_data = json_decode($webhook_response, true);
+                        if ($webhook_data['ok'] ?? false) {
+                            error_log("Webhook set successfully to: {$webhook_url}");
+                        } else {
+                            error_log("Webhook setup warning: " . ($webhook_data['description'] ?? 'Unknown'));
+                        }
+                    }
+                } else {
+                    error_log("SSL installation may have failed. Output: " . implode("\n", array_slice($ssl_output, -5)));
                 }
+            } else {
+                // No domain - set webhook to HTTP (Telegram will reject, but we try)
+                $server_ip = $_SERVER['SERVER_ADDR'] ?? (gethostbyname(gethostname()) ?: 'localhost');
+                $webhook_url = "http://{$server_ip}/index.php";
+                $ch = curl_init("https://api.telegram.org/bot{$_SESSION['bot_token']}/setWebhook");
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                    CURLOPT_TIMEOUT => 10
+                ]);
+                curl_exec($ch);
+                curl_close($ch);
+                error_log("Webhook set to HTTP (will need HTTPS domain for Telegram to accept)");
             }
             
             // Remove setup flag
