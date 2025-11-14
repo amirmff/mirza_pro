@@ -177,8 +177,14 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
         </main>
     </div>
     
+    <script>
+    // Save native confirm before main.js overrides it
+    const nativeConfirm = window.confirm;
+    </script>
     <script src="/webpanel/assets/js/main.js"></script>
     <script>
+    // Restore native confirm after main.js loads
+    window.confirm = nativeConfirm;
     const csrfToken = '<?php echo $auth->getCsrfToken(); ?>';
     
     function showLoading() {
