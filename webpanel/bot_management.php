@@ -205,7 +205,7 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
     }
     
     function controlBot(action) {
-        if (!confirm(`آیا از ${action==='stop'?'توقف':action==='start'?'شروع':'راه‌اندازی مجدد'} ربات اطمینان دارید؟`)) return;
+        if (!window.confirm(`آیا از ${action==='stop'?'توقف':action==='start'?'شروع':'راه‌اندازی مجدد'} ربات اطمینان دارید؟`)) return;
         showLoading();
         fetch('/webpanel/includes/bot_control.php', {
             method: 'POST',
@@ -247,7 +247,7 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
             return;
         }
         
-        if (!confirm('آیا از تغییر تنظیمات ربات و راه‌اندازی مجدد آن اطمینان دارید؟')) {
+        if (!window.confirm('آیا از تغییر تنظیمات ربات و راه‌اندازی مجدد آن اطمینان دارید؟')) {
             console.log('User cancelled');
             return;
         }
@@ -378,7 +378,7 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
     }
     
     function renewSSL() {
-        if (!confirm('آیا از تمدید SSL اطمینان دارید؟')) return;
+        if (!window.confirm('آیا از تمدید SSL اطمینان دارید؟')) return;
         showLoading();
         fetch('/webpanel/includes/bot_control.php', {
             method: 'POST',
@@ -416,7 +416,7 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
     }
     
     function clearLogs() {
-        if (!confirm('آیا از پاک کردن لاگ‌ها اطمینان دارید؟')) return;
+        if (!window.confirm('آیا از پاک کردن لاگ‌ها اطمینان دارید؟')) return;
         showLoading();
         fetch('/webpanel/includes/bot_control.php', {
             method: 'POST',
