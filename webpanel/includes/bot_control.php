@@ -93,31 +93,102 @@ switch ($action) {
         
     case 'set_webhook':
     case 'webhook':
-        require_once __DIR__ . '/../../config.php';
-        if (empty($APIKEY)) { echo json_encode(['success'=>false,'message'=>'توکن ربات تنظیم نشده است']); break; }
-        $domain = $_POST['domain'] ?? ($domainhosts ?? '');
-        $scheme = (!empty($domain) ? 'https' : 'http');
+        // Get APIKEY and domain from config file directly (avoid loading full config.php)
+        $config_content = file_get_contents(__DIR__ . '/../../config.php');
+        preg_match("/\\\$APIKEY\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $api_matches);
+        preg_match("/\\\$domainhosts\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $domain_matches);
+        
+        $bot_token = $api_matches[1] ?? '';
+        $domain = $_POST['domain'] ?? ($domain_matches[1] ?? '');
+        
+        if (empty($bot_token) || $bot_token === '{API_KEY}') {
+            ob_clean();
+            echo json_encode(['success'=>false,'message'=>'توکن ربات تنظیم نشده است']);
+            exit;
+        }
+        
+        $scheme = (!empty($domain) && $domain !== '{domain_name}' ? 'https' : 'http');
         // Telegram webhook endpoint is index.php in this project
-        $webhook_url = !empty($domain) ? "$scheme://{$domain}/index.php" : (isset($_SERVER['SERVER_ADDR'])?"http://{$_SERVER['SERVER_ADDR']}/index.php":"");
-        $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/setWebhook");
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>['url'=>$webhook_url]]);
-        $response = curl_exec($ch); $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if (!empty($domain) && $domain !== '{domain_name}') {
+            $webhook_url = "https://{$domain}/index.php";
+        } else {
+            $server_ip = $_SERVER['SERVER_ADDR'] ?? 'localhost';
+            $webhook_url = "http://{$server_ip}/index.php";
+        }
+        
+        $ch = curl_init("https://api.telegram.org/bot{$bot_token}/setWebhook");
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+            CURLOPT_TIMEOUT => 10
+        ]);
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
         $data = json_decode($response, true);
         if ($http_code === 200 && ($data['ok'] ?? false)) {
             log_activity($_SESSION['admin_id'], 'webhook_update', "Updated webhook to: {$webhook_url}");
+            ob_clean();
             echo json_encode(['success' => true, 'message' => 'وب‌هوک با موفقیت تنظیم شد', 'url'=>$webhook_url]);
         } else {
             $error_msg = $data['description'] ?? 'Unknown error';
+            ob_clean();
             echo json_encode(['success' => false, 'message' => "خطا در تنظیم وب‌هوک: {$error_msg}", 'response'=>$response]);
         }
-        break;
+        exit;
 
     case 'get_webhook':
-        require_once __DIR__ . '/../../config.php';
-        if (empty($APIKEY)) { echo json_encode(['success'=>false,'message'=>'توکن ربات تنظیم نشده است']); break; }
-        $res = file_get_contents("https://api.telegram.org/bot{$APIKEY}/getWebhookInfo");
+        // Get APIKEY from config file directly (avoid loading full config.php)
+        $config_content = file_get_contents(__DIR__ . '/../../config.php');
+        preg_match("/\\\$APIKEY\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $matches);
+        $bot_token = $matches[1] ?? '';
+        
+        if (empty($bot_token) || $bot_token === '{API_KEY}') {
+            ob_clean();
+            echo json_encode(['success'=>false,'message'=>'توکن ربات تنظیم نشده است']);
+            exit;
+        }
+        
+        $res = file_get_contents("https://api.telegram.org/bot{$bot_token}/getWebhookInfo");
+        ob_clean();
         echo $res ?: json_encode(['success'=>false]);
-        break;
+        exit;
+        
+    case 'delete_webhook':
+        // Get APIKEY from config file directly (avoid loading full config.php)
+        $config_content = file_get_contents(__DIR__ . '/../../config.php');
+        preg_match("/\\\$APIKEY\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $matches);
+        $bot_token = $matches[1] ?? '';
+        
+        if (empty($bot_token) || $bot_token === '{API_KEY}') {
+            ob_clean();
+            echo json_encode(['success' => false, 'message' => 'توکن ربات تنظیم نشده است']);
+            exit;
+        }
+        
+        $ch = curl_init("https://api.telegram.org/bot{$bot_token}/deleteWebhook");
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => ['drop_pending_updates' => 'true'],
+            CURLOPT_TIMEOUT => 10
+        ]);
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        $data = json_decode($response, true);
+        if ($http_code === 200 && ($data['ok'] ?? false)) {
+            log_activity($_SESSION['admin_id'], 'webhook_delete', 'Deleted webhook');
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Webhook حذف شد']);
+        } else {
+            ob_clean();
+            echo json_encode(['success' => false, 'message' => 'خطا در حذف Webhook: ' . ($data['description'] ?? 'Unknown error')]);
+        }
+        exit;
 
     case 'set_domain':
         $domain = trim($_POST['domain'] ?? '');
