@@ -49,8 +49,11 @@ class ConfigUpdater {
             $escaped_value = addslashes($value);
             
             // Pattern to match: $VARNAME = 'anything' or $VARNAME = "{placeholder}";
-            $pattern = "/(\\\${$var_name}\s*=\s*['\"])[^'\"]*(['\"];)/";
-            $replacement = "\$1{$escaped_value}\$2";
+            // Use a more specific pattern that captures the full assignment
+            $pattern = "/(\\\${$var_name}\s*=\s*['\"])([^'\"]*)(['\"];)/";
+            
+            // Replace with proper escaping - use single quotes to avoid variable interpolation issues
+            $replacement = '$1' . $escaped_value . '$3';
             
             $content = preg_replace($pattern, $replacement, $content);
         }
