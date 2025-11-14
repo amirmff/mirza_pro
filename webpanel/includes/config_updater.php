@@ -1,7 +1,7 @@
 <?php
 /**
- * Config File Updater - FIXED VERSION
- * Properly handles placeholders and updates ALL instances
+ * Config File Updater - BULLETPROOF VERSION
+ * Updates config.php by replacing lines directly - handles placeholders and all instances
  */
 
 class ConfigUpdater {
@@ -35,49 +35,32 @@ class ConfigUpdater {
             }
         }
         
-        // Read original
-        $content = file_get_contents($this->config_file);
-        $original = $content;
-        
-        // Update each variable - replace ALL occurrences including placeholders
-        foreach ($this->values as $var_name => $value) {
-            $escaped = addslashes($value);
-            
-            // Pattern that matches:
-            // $VARNAME = 'anything'; (including placeholders like {API_KEY})
-            // $VARNAME = "anything";
-            // This pattern matches the variable declaration and any value (including braces)
-            $pattern = "/(\\\${$var_name}\s*=\s*)(['\"])([^'\"]*)(\\2;)/";
-            
-            // Replace with new value
-            $replacement = '${1}\'' . $escaped . '\';';
-            
-            // Replace ALL instances
-            $new_content = preg_replace($pattern, $replacement, $content);
-            
-            if ($new_content === null) {
-                throw new Exception("Regex error updating {$var_name}");
-            }
-            
-            // If no change, try more aggressive pattern
-            if ($new_content === $content) {
-                // Try pattern that matches placeholders with braces
-                $alt_pattern = "/(\\\${$var_name}\s*=\s*)(['\"]?)([^'\";]*)(['\"]?;)/";
-                $new_content = preg_replace($alt_pattern, '${1}\'' . $escaped . '\';', $content);
-                
-                if ($new_content === null || $new_content === $content) {
-                    error_log("Warning: Could not update {$var_name} - pattern may not match");
-                    continue;
-                }
-            }
-            
-            $content = $new_content;
+        // Read file as lines
+        $lines = file($this->config_file, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            throw new Exception("Failed to read config file");
         }
         
-        // Validate syntax
+        // Update each variable - replace lines that match the pattern
+        foreach ($this->values as $var_name => $value) {
+            $escaped = addslashes($value);
+            $new_line = "\${$var_name} = '{$escaped}';";
+            
+            // Find and replace ALL lines matching this variable
+            for ($i = 0; $i < count($lines); $i++) {
+                // Match: $VARNAME = 'anything'; or $VARNAME = "anything"; or $VARNAME = '{placeholder}';
+                if (preg_match("/^\s*\\\${$var_name}\s*=\s*['\"][^'\"]*['\"]\s*;/", $lines[$i])) {
+                    $lines[$i] = $new_line;
+                }
+            }
+        }
+        
+        // Write back to temp file
         $temp_file = $this->config_file . '.tmp.' . time();
+        $content = implode("\n", $lines) . "\n";
         file_put_contents($temp_file, $content);
         
+        // Validate syntax
         $output = [];
         $code = 0;
         @exec("php -l " . escapeshellarg($temp_file) . " 2>&1", $output, $code);
