@@ -223,100 +223,74 @@ switch ($action) {
         try {
             // Update config.php using ConfigUpdater
             require_once __DIR__ . '/config_updater.php';
+            require_once __DIR__ . '/nginx_manager.php';
+            
             $cfg = __DIR__ . '/../../config.php';
             $updater = new ConfigUpdater($cfg);
             $updater->set('domainhosts', $domain);
             $updater->update();
-        } catch (Exception $e) {
-            error_log("Config update error: " . $e->getMessage());
-            ob_clean();
-            echo json_encode(['success'=>false,'message'=>'خطا در بروزرسانی config: ' . $e->getMessage()]);
-            exit;
-        }
-        
-        // Update nginx server_name
-        $nginx_config = '/etc/nginx/sites-available/mirza_pro';
-        $nginx_updated = false;
-        if (file_exists($nginx_config) && is_writable($nginx_config)) {
-            $nginx_content = file_get_contents($nginx_config);
-            $new_content = preg_replace(
-                "/server_name\s+[^;]+;/",
-                "server_name {$domain};",
-                $nginx_content
-            );
-            if ($new_content !== $nginx_content) {
-                file_put_contents($nginx_config, $new_content);
-                $nginx_updated = true;
-            }
-        } else {
-            error_log("Nginx config not writable: {$nginx_config}");
-        }
-        
-        [$code1, $out1] = run_cmd("nginx -t 2>&1");
-        if ($code1 === 0) {
-            run_cmd("systemctl reload nginx 2>&1");
-        }
-        
-        // Automatically issue SSL
-        $ssl_msg = '';
-        $ssl_success = false;
-        $ssl_email = $email ?: "admin@{$domain}";
-        
-        // Ensure certbot is installed
-        [$install_code, $install_out] = run_cmd("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)");
-        
-        // Issue SSL certificate
-        $ssl_cmd = "certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$ssl_email} 2>&1";
-        [$ssl_code, $ssl_out] = run_cmd($ssl_cmd);
-        
-        if ($ssl_code === 0) {
-            $ssl_success = true;
-            $ssl_msg = '✓ SSL certificate issued successfully';
             
-            // Update webhook to HTTPS
-            // Get APIKEY from config without requiring full config.php load
-            $config_content = file_get_contents(__DIR__ . '/../../config.php');
-            preg_match("/\\\$APIKEY\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $matches);
-            $bot_token = $matches[1] ?? '';
+            // Update Nginx configuration
+            $nginx = new NginxManager();
+            $nginx->updateDomain($domain);
+            $nginx->reload();
             
-            if (!empty($bot_token) && $bot_token !== '{API_KEY}') {
-                $webhook_url = "https://{$domain}/index.php";
-                $ch = curl_init("https://api.telegram.org/bot{$bot_token}/setWebhook");
-                curl_setopt_array($ch, [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => ['url' => $webhook_url],
-                    CURLOPT_TIMEOUT => 10
-                ]);
-                $webhook_response = curl_exec($ch);
-                $webhook_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
+            // Automatically install SSL
+            $ssl_success = false;
+            $ssl_msg = '';
+            $ssl_email = $email ?: "admin@{$domain}";
+            
+            try {
+                $nginx->installSSL($domain, $ssl_email);
+                $ssl_success = true;
+                $ssl_msg = '✓ SSL certificate issued successfully';
                 
-                if ($webhook_http_code === 200) {
-                    $ssl_msg .= ' | Webhook تنظیم شد';
+                // Update webhook to HTTPS
+                $config_content = file_get_contents(__DIR__ . '/../../config.php');
+                preg_match("/\\\$APIKEY\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $matches);
+                $bot_token = $matches[1] ?? '';
+                
+                if (!empty($bot_token) && $bot_token !== '{API_KEY}') {
+                    $webhook_url = "https://{$domain}/index.php";
+                    $ch = curl_init("https://api.telegram.org/bot{$bot_token}/setWebhook");
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                        CURLOPT_TIMEOUT => 10
+                    ]);
+                    $webhook_response = curl_exec($ch);
+                    $webhook_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+                    
+                    if ($webhook_http_code === 200) {
+                        $ssl_msg .= ' | Webhook تنظیم شد';
+                    }
                 }
+            } catch (Exception $ssl_e) {
+                $ssl_msg = '⚠ SSL setup failed: ' . $ssl_e->getMessage();
+                error_log("SSL installation error: " . $ssl_e->getMessage());
             }
-        } else {
-            // $ssl_out is a string, get last 3 lines
-            $ssl_lines = explode("\n", $ssl_out);
-            $ssl_msg = '⚠ SSL setup failed: ' . implode("\n", array_slice($ssl_lines, -3));
+            
+            log_activity($_SESSION['admin_id'], 'set_domain', "domain={$domain}, ssl=" . ($ssl_success ? 'installed' : 'failed'));
+            
+            $message = 'دامنه و Nginx بروزرسانی شد';
+            if ($ssl_success) {
+                $message .= ' | SSL نصب شد و Webhook تنظیم شد';
+            }
+            
+            ob_clean();
+            echo json_encode([
+                'success' => true,
+                'message' => $message,
+                'ssl' => $ssl_msg,
+                'ssl_success' => $ssl_success
+            ]);
+        } catch (Exception $e) {
+            error_log("Domain setup error: " . $e->getMessage());
+            ob_clean();
+            echo json_encode(['success'=>false,'message'=>'خطا: ' . $e->getMessage()]);
         }
-        
-        log_activity($_SESSION['admin_id'], 'set_domain', "domain={$domain}, ssl=" . ($ssl_success ? 'installed' : 'failed'));
-        
-        $message = ($code1 === 0 && $nginx_updated) ? 'دامنه و Nginx بروزرسانی شد' : 'دامنه بروزرسانی شد';
-        if ($ssl_success) {
-            $message .= ' | SSL نصب شد و Webhook تنظیم شد';
-        }
-        
-        ob_clean();
-        echo json_encode([
-            'success' => true,
-            'message' => $message,
-            'details' => $out1,
-            'ssl' => $ssl_msg,
-            'ssl_success' => $ssl_success
-        ]);
         exit;
 
     case 'issue_ssl':

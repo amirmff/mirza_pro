@@ -270,49 +270,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $domain = $_SESSION['domain'];
                 $email = "admin@{$domain}";
                 
-                // Update nginx server_name first
-                $nginx_config = '/etc/nginx/sites-available/mirza_pro';
-                if (file_exists($nginx_config) && is_writable($nginx_config)) {
-                    $nginx_content = file_get_contents($nginx_config);
-                    $nginx_content = preg_replace(
-                        "/server_name\s+[^;]+;/",
-                        "server_name {$domain};",
-                        $nginx_content
-                    );
-                    file_put_contents($nginx_config, $nginx_content);
-                    @exec('nginx -t && systemctl reload nginx 2>&1');
-                }
-                
-                // Ensure certbot is installed
-                @exec("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)", $certbot_check);
-                
-                // Issue SSL certificate
-                @exec("certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$email} 2>&1", $ssl_output, $ssl_code);
-                
-                if ($ssl_code === 0 || file_exists("/etc/letsencrypt/live/{$domain}/cert.pem")) {
-                    // SSL installed successfully, set webhook to HTTPS
-                    $webhook_url = "https://{$domain}/index.php";
-                    $ch = curl_init("https://api.telegram.org/bot{$_SESSION['bot_token']}/setWebhook");
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST => true,
-                        CURLOPT_POSTFIELDS => ['url' => $webhook_url],
-                        CURLOPT_TIMEOUT => 10
-                    ]);
-                    $webhook_response = curl_exec($ch);
-                    $webhook_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                    curl_close($ch);
+                try {
+                    require_once __DIR__ . '/includes/nginx_manager.php';
+                    $nginx = new NginxManager();
                     
-                    if ($webhook_http_code === 200) {
-                        $webhook_data = json_decode($webhook_response, true);
-                        if ($webhook_data['ok'] ?? false) {
-                            error_log("Webhook set successfully to: {$webhook_url}");
-                        } else {
-                            error_log("Webhook setup warning: " . ($webhook_data['description'] ?? 'Unknown'));
+                    // Update Nginx configuration with domain
+                    $nginx->updateDomain($domain);
+                    $nginx->reload();
+                    
+                    // Install SSL certificate
+                    try {
+                        $nginx->installSSL($domain, $email);
+                        
+                        // SSL installed successfully, set webhook to HTTPS
+                        $webhook_url = "https://{$domain}/index.php";
+                        $ch = curl_init("https://api.telegram.org/bot{$_SESSION['bot_token']}/setWebhook");
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_POST => true,
+                            CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                            CURLOPT_TIMEOUT => 10
+                        ]);
+                        $webhook_response = curl_exec($ch);
+                        $webhook_http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                        curl_close($ch);
+                        
+                        if ($webhook_http_code === 200) {
+                            $webhook_data = json_decode($webhook_response, true);
+                            if ($webhook_data['ok'] ?? false) {
+                                error_log("Webhook set successfully to: {$webhook_url}");
+                            } else {
+                                error_log("Webhook setup warning: " . ($webhook_data['description'] ?? 'Unknown'));
+                            }
                         }
+                    } catch (Exception $ssl_e) {
+                        error_log("SSL installation failed: " . $ssl_e->getMessage());
+                        // Continue anyway - webhook can be set manually later
                     }
-                } else {
-                    error_log("SSL installation may have failed. Output: " . implode("\n", array_slice($ssl_output, -5)));
+                } catch (Exception $e) {
+                    error_log("Nginx/SSL setup error: " . $e->getMessage());
+                    // Continue anyway - setup can complete without SSL
                 }
             } else {
                 // No domain - set webhook to HTTP (Telegram will reject, but we try)
