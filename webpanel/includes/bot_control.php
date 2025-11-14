@@ -8,7 +8,6 @@
 ob_start();
 
 require_once __DIR__ . '/auth.php';
-require_once __DIR__ . '/bot_core.php';
 
 // Clear any output
 ob_clean();
@@ -40,8 +39,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
+// Actions that don't need bot_core.php (avoid loading config.php which may have errors)
+$no_bot_core_actions = ['set_domain', 'set_webhook', 'webhook', 'get_webhook', 'delete_webhook', 'issue_ssl', 'renew_ssl'];
+
+// Only load bot_core.php for actions that need it (for $pdo, log_activity, etc.)
+if (!in_array($action, $no_bot_core_actions)) {
+    try {
+        require_once __DIR__ . '/bot_core.php';
+    } catch (Exception $e) {
+        error_log("bot_core.php load error: " . $e->getMessage());
+        // Continue anyway for actions that don't need it
+    }
+}
+
 function log_activity($admin_id, $action, $description) {
     global $pdo;
+    if (!isset($pdo)) {
+        // If bot_core.php wasn't loaded, try to load it now
+        try {
+            require_once __DIR__ . '/bot_core.php';
+        } catch (Exception $e) {
+            error_log('log_activity: bot_core.php not available');
+            return;
+        }
+    }
     try {
         $stmt = $pdo->prepare("INSERT INTO admin_logs (admin_id, action, description, ip_address, created_at) VALUES (:admin_id, :action, :description, :ip, NOW())");
         $stmt->execute([
@@ -312,10 +333,14 @@ switch ($action) {
         
         if ($code === 0) {
             // Update webhook to HTTPS
-            require_once __DIR__ . '/../../config.php';
-            if (!empty($APIKEY)) {
+            // Get APIKEY from config without requiring full config.php load
+            $config_content = file_get_contents(__DIR__ . '/../../config.php');
+            preg_match("/\\\$APIKEY\s*=\s*['\"]([^'\"]+)['\"];/", $config_content, $matches);
+            $bot_token = $matches[1] ?? '';
+            
+            if (!empty($bot_token) && $bot_token !== '{API_KEY}') {
                 $webhook_url = "https://{$domain}/index.php";
-                $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/setWebhook");
+                $ch = curl_init("https://api.telegram.org/bot{$bot_token}/setWebhook");
                 curl_setopt_array($ch, [
                     CURLOPT_RETURNTRANSFER => true,
                     CURLOPT_POST => true,
@@ -328,17 +353,19 @@ switch ($action) {
             log_activity($_SESSION['admin_id'], 'ssl_install', "SSL installed for: {$domain}");
         }
         
+        ob_clean();
         echo json_encode([
             'success' => $code === 0,
             'message' => $code === 0 ? 'SSL صادر شد' : 'خطا در صدور SSL',
             'details' => implode("\n", array_slice($out, -10))
         ]);
-        break;
+        exit;
 
     case 'renew_ssl':
         [$code, $out] = run_cmd('certbot renew --nginx --no-random-sleep-on-renew -n');
+        ob_clean();
         echo json_encode(['success'=> $code===0, 'message'=> $code===0?'تمدید SSL اجرا شد':'خطا در تمدید SSL', 'details'=>$out]);
-        break;
+        exit;
         
     case 'logs':
         $log_file = '/var/log/mirza_bot.log';
