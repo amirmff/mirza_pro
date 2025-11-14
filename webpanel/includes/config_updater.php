@@ -1,7 +1,7 @@
 <?php
 /**
  * Config File Updater - BULLETPROOF VERSION
- * Updates config.php by replacing lines directly - handles placeholders and all instances
+ * Handles placeholders, updates ALL instances, validates properly
  */
 
 class ConfigUpdater {
@@ -35,39 +35,66 @@ class ConfigUpdater {
             }
         }
         
-        // Read file as lines
-        $lines = file($this->config_file, FILE_IGNORE_NEW_LINES);
-        if ($lines === false) {
-            throw new Exception("Failed to read config file");
-        }
+        // Read original
+        $content = file_get_contents($this->config_file);
+        $original = $content;
         
-        // Update each variable - replace lines that match the pattern
+        // Update each variable - replace ALL occurrences including placeholders
         foreach ($this->values as $var_name => $value) {
             $escaped = addslashes($value);
-            $new_line = "\${$var_name} = '{$escaped}';";
             
-            // Find and replace ALL lines matching this variable
-            for ($i = 0; $i < count($lines); $i++) {
-                // Match: $VARNAME = 'anything'; or $VARNAME = "anything"; or $VARNAME = '{placeholder}';
-                if (preg_match("/^\s*\\\${$var_name}\s*=\s*['\"][^'\"]*['\"]\s*;/", $lines[$i])) {
-                    $lines[$i] = $new_line;
+            // Pattern that matches:
+            // $VARNAME = 'anything'; (including placeholders like {API_KEY}, {admin_number})
+            // $VARNAME = "anything";
+            // This pattern uses a non-greedy match to capture everything between quotes
+            $pattern = "/(\\\${$var_name}\s*=\s*)(['\"])(.*?)(\\2;)/s";
+            
+            // Replace with new value
+            $replacement = '${1}\'' . $escaped . '\';';
+            
+            // Replace ALL instances
+            $new_content = preg_replace($pattern, $replacement, $content);
+            
+            if ($new_content === null) {
+                throw new Exception("Regex error updating {$var_name}");
+            }
+            
+            // Verify replacement happened
+            if ($new_content === $content) {
+                // Try alternative: match without quotes (for edge cases)
+                $alt_pattern = "/(\\\${$var_name}\s*=\s*)(['\"]?)([^;]*?)(['\"]?;)/";
+                $alt_replacement = '${1}\'' . $escaped . '\';';
+                $new_content = preg_replace($alt_pattern, $alt_replacement, $content);
+                
+                if ($new_content === null || $new_content === $content) {
+                    error_log("Warning: Could not update {$var_name} - pattern may not match. Line: " . $this->findVariableLine($content, $var_name));
+                    // Try one more time with a very simple pattern
+                    $simple_pattern = "/\\\${$var_name}\s*=\s*[^;]+;/";
+                    $simple_replacement = "\${$var_name} = '{$escaped}';";
+                    $new_content = preg_replace($simple_pattern, $simple_replacement, $content);
+                    
+                    if ($new_content === null || $new_content === $content) {
+                        throw new Exception("Failed to update {$var_name}. Pattern did not match any instances.");
+                    }
                 }
             }
+            
+            $content = $new_content;
         }
         
-        // Write back to temp file
+        // Validate syntax
         $temp_file = $this->config_file . '.tmp.' . time();
-        $content = implode("\n", $lines) . "\n";
         file_put_contents($temp_file, $content);
         
-        // Validate syntax
         $output = [];
         $code = 0;
         @exec("php -l " . escapeshellarg($temp_file) . " 2>&1", $output, $code);
         
         if ($code !== 0) {
             @unlink($temp_file);
-            throw new Exception("Syntax error: " . implode("\n", $output));
+            $error_msg = "Syntax error: " . implode("\n", $output);
+            error_log($error_msg);
+            throw new Exception($error_msg);
         }
         
         // Backup original
@@ -79,7 +106,35 @@ class ConfigUpdater {
             throw new Exception("Failed to replace config file");
         }
         
+        // Verify updates were applied
+        $this->verifyUpdates();
+        
         return true;
+    }
+    
+    private function findVariableLine($content, $var_name) {
+        $lines = explode("\n", $content);
+        foreach ($lines as $i => $line) {
+            if (preg_match("/\\\${$var_name}\s*=/", $line)) {
+                return ($i + 1) . ": " . trim($line);
+            }
+        }
+        return "not found";
+    }
+    
+    private function verifyUpdates() {
+        $content = file_get_contents($this->config_file);
+        foreach ($this->values as $var_name => $value) {
+            // Check if value appears in file (in main section after $pdo)
+            $main_section_start = strpos($content, '$pdo = new PDO');
+            if ($main_section_start !== false) {
+                $main_section = substr($content, $main_section_start);
+                $pattern = "/\\\${$var_name}\s*=\s*['\"]" . preg_quote($value, '/') . "['\"];/";
+                if (!preg_match($pattern, $main_section)) {
+                    error_log("Warning: Verification failed for {$var_name} in main section");
+                }
+            }
+        }
     }
     
     public function restartBot() {
