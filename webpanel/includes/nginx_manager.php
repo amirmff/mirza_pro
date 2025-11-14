@@ -113,8 +113,21 @@ NGINX_CONFIG;
         }
         
         // Write updated config
-        if (file_put_contents($this->config_file, $content) === false) {
-            throw new Exception("Failed to write Nginx config file");
+        $write_success = false;
+        if (is_writable($this->config_file)) {
+            $write_success = file_put_contents($this->config_file, $content) !== false;
+        }
+        
+        // If direct write failed, try via sudo
+        if (!$write_success) {
+            $temp_file = sys_get_temp_dir() . '/mirza_nginx_' . uniqid() . '.conf';
+            file_put_contents($temp_file, $content);
+            @exec("sudo cp " . escapeshellarg($temp_file) . " " . escapeshellarg($this->config_file) . " 2>&1", $cp_out, $cp_code);
+            @unlink($temp_file);
+            
+            if ($cp_code !== 0 || !file_exists($this->config_file)) {
+                throw new Exception("Failed to write Nginx config file. Please run: sudo chown www-data:www-data {$this->config_file} && sudo chmod 664 {$this->config_file}");
+            }
         }
         
         // Test configuration
@@ -130,14 +143,30 @@ NGINX_CONFIG;
         $this->ensureWritable();
         $content = $this->getConfigTemplate($domain);
         
-        if (file_put_contents($this->config_file, $content) === false) {
-            throw new Exception("Failed to create Nginx config file");
+        $write_success = false;
+        if (is_writable($this->config_file) || !file_exists($this->config_file)) {
+            $write_success = @file_put_contents($this->config_file, $content) !== false;
+        }
+        
+        // If direct write failed, try via sudo
+        if (!$write_success) {
+            $temp_file = sys_get_temp_dir() . '/mirza_nginx_' . uniqid() . '.conf';
+            file_put_contents($temp_file, $content);
+            @exec("sudo cp " . escapeshellarg($temp_file) . " " . escapeshellarg($this->config_file) . " 2>&1", $cp_out, $cp_code);
+            @unlink($temp_file);
+            
+            if ($cp_code !== 0 || !file_exists($this->config_file)) {
+                throw new Exception("Failed to create Nginx config file. Please run: sudo chown www-data:www-data " . dirname($this->config_file) . " && sudo chmod 755 " . dirname($this->config_file));
+            }
         }
         
         // Enable site
         $enabled_link = '/etc/nginx/sites-enabled/mirza_pro';
         if (!file_exists($enabled_link)) {
-            symlink($this->config_file, $enabled_link);
+            @symlink($this->config_file, $enabled_link);
+            if (!file_exists($enabled_link)) {
+                @exec("sudo ln -sf " . escapeshellarg($this->config_file) . " " . escapeshellarg($enabled_link) . " 2>&1");
+            }
         }
         
         $this->testConfig();
@@ -174,15 +203,49 @@ NGINX_CONFIG;
     private function ensureWritable() {
         $dir = dirname($this->config_file);
         if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
+            @mkdir($dir, 0755, true);
         }
         
+        // Try to make file writable if it exists
         if (file_exists($this->config_file) && !is_writable($this->config_file)) {
-            @chmod($this->config_file, 0644);
-            @exec("chown root:root " . escapeshellarg($this->config_file) . " 2>&1");
+            // Try chmod first
+            @chmod($this->config_file, 0664);
+            
+            // Try chown to www-data (common web server user)
+            @exec("chown www-data:www-data " . escapeshellarg($this->config_file) . " 2>&1", $chown_out, $chown_code);
+            
+            // If that doesn't work, try root
             if (!is_writable($this->config_file)) {
-                throw new Exception("Nginx config file is not writable: {$this->config_file}");
+                @exec("chown root:root " . escapeshellarg($this->config_file) . " 2>&1", $chown_out2, $chown_code2);
+                @chmod($this->config_file, 0664);
             }
+            
+            // If still not writable, try using sudo
+            if (!is_writable($this->config_file)) {
+                @exec("sudo chown www-data:www-data " . escapeshellarg($this->config_file) . " 2>&1", $sudo_out, $sudo_code);
+                @exec("sudo chmod 664 " . escapeshellarg($this->config_file) . " 2>&1", $sudo_out2, $sudo_code2);
+            }
+            
+            // Final check
+            if (!is_writable($this->config_file)) {
+                // Try to write using exec with sudo
+                $can_write_via_sudo = false;
+                $test_content = "# Test write\n";
+                @exec("echo " . escapeshellarg($test_content) . " | sudo tee " . escapeshellarg($this->config_file) . " > /dev/null 2>&1", $tee_out, $tee_code);
+                if ($tee_code === 0) {
+                    $can_write_via_sudo = true;
+                }
+                
+                if (!$can_write_via_sudo) {
+                    throw new Exception("Nginx config file is not writable: {$this->config_file}. Please run: sudo chown www-data:www-data {$this->config_file} && sudo chmod 664 {$this->config_file}");
+                }
+            }
+        }
+        
+        // Ensure directory is writable for creating new files
+        if (!is_writable($dir)) {
+            @chmod($dir, 0755);
+            @exec("chown root:root " . escapeshellarg($dir) . " 2>&1");
         }
     }
     
