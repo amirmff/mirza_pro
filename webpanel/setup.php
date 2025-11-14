@@ -154,153 +154,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             
-            // Update config.php with bot token and admin ID
+            // Update config.php using proper ConfigUpdater class
+            require_once __DIR__ . '/includes/config_updater.php';
+            
             $config_file = __DIR__ . '/../config.php';
-            if (file_exists($config_file) && is_writable($config_file)) {
-                $config_content = file_get_contents($config_file);
-                
-                // Escape values for safe replacement
-                $bot_token_escaped = addslashes($_SESSION['bot_token']);
-                $admin_id_escaped = addslashes($_SESSION['admin_id']);
-                $db_name_escaped = addslashes($_SESSION['db_name']);
-                $db_user_escaped = addslashes($_SESSION['db_user']);
-                $db_pass_escaped = addslashes($_SESSION['db_pass']);
-                
-                // Update bot token - replace ALL instances (handle both placeholder {API_KEY} and any existing value)
-                $config_content = preg_replace(
-                    "/\\\$APIKEY\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$APIKEY = '{$bot_token_escaped}';",
-                    $config_content
-                );
-                
-                // Also replace placeholder format specifically
-                $config_content = str_replace(
-                    "\$APIKEY = '{API_KEY}';",
-                    "\$APIKEY = '{$bot_token_escaped}';",
-                    $config_content
-                );
-                
-                // Update admin ID - replace ALL instances
-                $config_content = preg_replace(
-                    "/\\\$adminnumber\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$adminnumber = '{$admin_id_escaped}';",
-                    $config_content
-                );
-                
-                // Also replace placeholder format specifically
-                $config_content = str_replace(
-                    "\$adminnumber = '{admin_number}';",
-                    "\$adminnumber = '{$admin_id_escaped}';",
-                    $config_content
-                );
-                
-                // Update domain if provided - replace ALL instances
-                if (!empty($_SESSION['domain'])) {
-                    $domain_escaped = addslashes($_SESSION['domain']);
-                    $config_content = preg_replace(
-                        "/\\\$domainhosts\s*=\s*['\"][^'\"]*['\"];/",
-                        "\$domainhosts = '{$domain_escaped}';",
-                        $config_content
-                    );
-                    // Also replace placeholder format specifically
-                    $config_content = str_replace(
-                        "\$domainhosts = '{domain_name}';",
-                        "\$domainhosts = '{$domain_escaped}';",
-                        $config_content
-                    );
-                }
-                
-                // Update bot username (get from Telegram API)
-                $bot_info = @file_get_contents("https://api.telegram.org/bot{$_SESSION['bot_token']}/getMe");
-                if ($bot_info) {
-                    $bot_data = json_decode($bot_info, true);
-                    if ($bot_data && $bot_data['ok'] && isset($bot_data['result']['username'])) {
-                        $bot_username = $bot_data['result']['username'];
-                        $bot_username_escaped = addslashes('@' . $bot_username);
-                        $config_content = preg_replace(
-                            "/\\\$usernamebot\s*=\s*['\"][^'\"]*['\"];/",
-                            "\$usernamebot = '{$bot_username_escaped}';",
-                            $config_content
-                        );
-                        // Also replace placeholder format
-                        $config_content = str_replace(
-                            "\$usernamebot = '{username_bot}';",
-                            "\$usernamebot = '{$bot_username_escaped}';",
-                            $config_content
-                        );
-                    }
-                }
-                
-                // Update database credentials - replace ALL instances
-                $config_content = preg_replace(
-                    "/\\\$dbname\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$dbname = '{$db_name_escaped}';",
-                    $config_content
-                );
-                $config_content = str_replace(
-                    "\$dbname = '{database_name}';",
-                    "\$dbname = '{$db_name_escaped}';",
-                    $config_content
-                );
-                
-                $config_content = preg_replace(
-                    "/\\\$usernamedb\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$usernamedb = '{$db_user_escaped}';",
-                    $config_content
-                );
-                $config_content = str_replace(
-                    "\$usernamedb = '{username_db}';",
-                    "\$usernamedb = '{$db_user_escaped}';",
-                    $config_content
-                );
-                
-                $config_content = preg_replace(
-                    "/\\\$passworddb\s*=\s*['\"][^'\"]*['\"];/",
-                    "\$passworddb = '{$db_pass_escaped}';",
-                    $config_content
-                );
-                $config_content = str_replace(
-                    "\$passworddb = '{password_db}';",
-                    "\$passworddb = '{$db_pass_escaped}';",
-                    $config_content
-                );
-                
-                // Write the updated content
-                $write_result = file_put_contents($config_file, $config_content);
-                
-                if ($write_result === false) {
-                    error_log("Error: Failed to write config.php");
-                    throw new Exception("Failed to update config.php - check file permissions");
-                }
-                
-                // Verify the update worked by checking the main config section (line 84+)
-                $verify_content = file_get_contents($config_file);
-                // Check if token appears in the main config section (after line 80)
-                $lines = explode("\n", $verify_content);
-                $found_token = false;
-                foreach ($lines as $line) {
-                    if (strpos($line, '$APIKEY') !== false && strpos($line, $_SESSION['bot_token']) !== false) {
-                        $found_token = true;
-                        break;
-                    }
-                }
-                
-                if (!$found_token) {
-                    error_log("Warning: config.php update verification failed - bot token not found in main config section");
-                    // Try one more time with a more direct approach
-                    $config_content = file_get_contents($config_file);
-                    // Direct string replacement for the main section (after database connection)
-                    $main_section_pattern = "/(\\\$APIKEY\s*=\s*['\"])[^'\"]*(['\"];)/";
-                    $config_content = preg_replace($main_section_pattern, "\$1{$bot_token_escaped}\$2", $config_content);
-                    $main_section_pattern = "/(\\\$adminnumber\s*=\s*['\"])[^'\"]*(['\"];)/";
-                    $config_content = preg_replace($main_section_pattern, "\$1{$admin_id_escaped}\$2", $config_content);
-                    file_put_contents($config_file, $config_content);
-                }
-            } else {
-                $error_msg = "Error: config.php not writable or not found: " . $config_file;
-                error_log($error_msg);
-                throw new Exception($error_msg);
+            $updater = new ConfigUpdater($config_file);
+            
+            // Set all configuration values
+            $updater->set('APIKEY', $_SESSION['bot_token']);
+            $updater->set('adminnumber', $_SESSION['admin_id']);
+            $updater->set('dbname', $_SESSION['db_name']);
+            $updater->set('usernamedb', $_SESSION['db_user']);
+            $updater->set('passworddb', $_SESSION['db_pass']);
+            
+            if (!empty($_SESSION['domain'])) {
+                $updater->set('domainhosts', $_SESSION['domain']);
             }
+            
+            // Get bot username from Telegram API
+            $bot_info = @file_get_contents("https://api.telegram.org/bot{$_SESSION['bot_token']}/getMe");
+            if ($bot_info) {
+                $bot_data = json_decode($bot_info, true);
+                if ($bot_data && $bot_data['ok'] && isset($bot_data['result']['username'])) {
+                    $updater->set('usernamebot', '@' . $bot_data['result']['username']);
+                }
+            }
+            
+            // Perform the update
+            $updater->update();
             
             // Update setting table with admin ID and bot token
             try {
