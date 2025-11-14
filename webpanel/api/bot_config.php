@@ -1,12 +1,12 @@
 <?php
 /**
- * Bot Configuration API
- * Allows changing bot token, admin ID, and domain from web panel
+ * Bot Configuration API - COMPLETE REWRITE
+ * Handles all bot configuration operations
  */
 
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/config_updater.php';
-require_once __DIR__ . '/../includes/bot_control.php'; // For log_activity function
+require_once __DIR__ . '/../includes/bot_control.php';
 
 header('Content-Type: application/json');
 
@@ -24,13 +24,10 @@ if (!$currentAdmin || ($currentAdmin['rule'] ?? '') !== 'administrator') {
     exit;
 }
 
-// CSRF protection
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!$auth->verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
-        exit;
-    }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$auth->verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
+    exit;
 }
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
@@ -50,18 +47,15 @@ switch ($action) {
             $config_file = __DIR__ . '/../../config.php';
             $updater = new ConfigUpdater($config_file);
             
-            // Update bot token
+            // Update all config values
             $updater->set('APIKEY', $bot_token);
-            
-            // Update admin ID
             $updater->set('adminnumber', $admin_id);
             
-            // Update domain if provided
             if (!empty($domain)) {
                 $updater->set('domainhosts', $domain);
             }
             
-            // Get bot username from Telegram API
+            // Get bot username
             $bot_info = @file_get_contents("https://api.telegram.org/bot{$bot_token}/getMe");
             if ($bot_info) {
                 $bot_data = json_decode($bot_info, true);
@@ -70,54 +64,49 @@ switch ($action) {
                 }
             }
             
-            // Perform the update
+            // Update config
             $updater->update();
             
-            // Update webhook if domain provided
-            if (!empty($domain)) {
-                $webhook_url = "https://{$domain}/index.php";
-                $ch = curl_init("https://api.telegram.org/bot{$bot_token}/setWebhook");
-                curl_setopt_array($ch, [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => ['url' => $webhook_url],
-                    CURLOPT_TIMEOUT => 10
-                ]);
-                curl_exec($ch);
-                curl_close($ch);
-            }
+            // Update webhook
+            $webhook_url = !empty($domain) ? "https://{$domain}/index.php" : "http://" . ($_SERVER['SERVER_ADDR'] ?? 'localhost') . "/index.php";
+            $ch = curl_init("https://api.telegram.org/bot{$bot_token}/setWebhook");
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                CURLOPT_TIMEOUT => 10
+            ]);
+            curl_exec($ch);
+            curl_close($ch);
             
             // Restart bot
             $bot_restarted = $updater->restartBot();
             
-            // Log activity
-            log_activity($currentAdmin['id_admin'], 'bot_config_update', "Updated bot token and admin ID");
+            log_activity($currentAdmin['id_admin'], 'bot_config_update', "Updated bot configuration");
             
             echo json_encode([
                 'success' => true,
                 'message' => 'Configuration updated successfully',
-                'bot_restarted' => $bot_restarted
+                'bot_restarted' => $bot_restarted,
+                'webhook_url' => $webhook_url
             ]);
             
         } catch (Exception $e) {
             error_log("Bot config update error: " . $e->getMessage());
             echo json_encode([
                 'success' => false,
-                'message' => 'Failed to update configuration: ' . $e->getMessage()
+                'message' => 'Failed: ' . $e->getMessage()
             ]);
         }
         break;
         
     case 'get_config':
-        // Return current config (without exposing sensitive data)
         require_once __DIR__ . '/../../config.php';
-        
         echo json_encode([
             'success' => true,
             'config' => [
-                'bot_token_configured' => ($APIKEY ?? '') !== '{API_KEY}' && !empty($APIKEY),
-                'admin_id_configured' => ($adminnumber ?? '') !== '{admin_number}' && !empty($adminnumber),
-                'domain_configured' => !empty($domainhosts) && ($domainhosts ?? '') !== '{domain_name}',
+                'bot_token' => !empty($APIKEY) && $APIKEY !== '{API_KEY}' ? substr($APIKEY, 0, 10) . '...' : '',
+                'admin_id' => $adminnumber ?? '',
                 'domain' => $domainhosts ?? '',
                 'bot_username' => $usernamebot ?? ''
             ]
@@ -128,4 +117,3 @@ switch ($action) {
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
         break;
 }
-

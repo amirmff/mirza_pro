@@ -121,61 +121,63 @@ switch ($action) {
             break; 
         }
         
+        // Update config.php using ConfigUpdater
+        require_once __DIR__ . '/config_updater.php';
+        $cfg = __DIR__ . '/../../config.php';
+        try {
+            $updater = new ConfigUpdater($cfg);
+            $updater->set('domainhosts', $domain);
+            $updater->update();
+        } catch (Exception $e) {
+            error_log("Config update error: " . $e->getMessage());
+        }
+        
         // Update nginx server_name
         $nginx_config = '/etc/nginx/sites-available/mirza_pro';
-        if (file_exists($nginx_config) && is_writable($nginx_config)) {
+        if (file_exists($nginx_config)) {
             $nginx_content = file_get_contents($nginx_config);
             $nginx_content = preg_replace(
                 "/server_name\s+[^;]+;/",
                 "server_name {$domain};",
                 $nginx_content
             );
-            file_put_contents($nginx_config, $nginx_content);
+            @file_put_contents($nginx_config, $nginx_content);
         }
         
         [$code1, $out1] = run_cmd("nginx -t && systemctl reload nginx 2>&1");
         
-        // Update config.php $domainhosts
-        $cfg = __DIR__ . '/../../config.php';
-        if (is_writable($cfg)) {
-            $content = file_get_contents($cfg);
-            $content = preg_replace("/\$domainhosts\s*=\s*'[^']*';/", "\$domainhosts = '{$domain}';", $content);
-            file_put_contents($cfg, $content);
-        }
-        
-        // Automatically issue SSL if domain provided
+        // Automatically issue SSL
         $ssl_msg = '';
         $ssl_success = false;
-        if ($domain !== '') {
-            $ssl_email = $email ?: "admin@{$domain}";
+        $ssl_email = $email ?: "admin@{$domain}";
+        
+        // Ensure certbot is installed
+        [$install_code, $install_out] = run_cmd("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)");
+        
+        // Issue SSL certificate (run in background for faster response)
+        $ssl_cmd = "certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$ssl_email} 2>&1";
+        [$ssl_code, $ssl_out] = run_cmd($ssl_cmd);
+        
+        if ($ssl_code === 0) {
+            $ssl_success = true;
+            $ssl_msg = '✓ SSL certificate issued successfully';
             
-            // Ensure certbot is installed
-            [$install_code, $install_out] = run_cmd("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)");
-            
-            // Issue SSL certificate
-            [$ssl_code, $ssl_out] = run_cmd("certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$ssl_email} 2>&1");
-            
-            if ($ssl_code === 0) {
-                $ssl_success = true;
-                $ssl_msg = 'SSL certificate issued successfully';
-                
-                // Update webhook to HTTPS
-                require_once __DIR__ . '/../../config.php';
-                if (!empty($APIKEY)) {
-                    $webhook_url = "https://{$domain}/index.php";
-                    $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/setWebhook");
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST => true,
-                        CURLOPT_POSTFIELDS => ['url' => $webhook_url],
-                        CURLOPT_TIMEOUT => 10
-                    ]);
-                    curl_exec($ch);
-                    curl_close($ch);
-                }
-            } else {
-                $ssl_msg = 'SSL setup attempted but may need manual configuration: ' . implode("\n", array_slice($ssl_out, -5));
+            // Update webhook to HTTPS
+            require_once __DIR__ . '/../../config.php';
+            if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
+                $webhook_url = "https://{$domain}/index.php";
+                $ch = curl_init("https://api.telegram.org/bot{$APIKEY}/setWebhook");
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                    CURLOPT_TIMEOUT => 10
+                ]);
+                curl_exec($ch);
+                curl_close($ch);
             }
+        } else {
+            $ssl_msg = '⚠ SSL setup failed: ' . implode("\n", array_slice($ssl_out, -3));
         }
         
         log_activity($_SESSION['admin_id'], 'set_domain', "domain={$domain}, ssl=" . ($ssl_success ? 'installed' : 'failed'));
