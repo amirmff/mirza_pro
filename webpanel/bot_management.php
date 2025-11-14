@@ -129,8 +129,8 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
                             <input id="admin_id" type="text" class="form-control" placeholder="123456789" value="<?php echo htmlspecialchars($adminnumber ?? ''); ?>">
                             <small style="color:#666;font-size:12px;">از @userinfobot دریافت کنید</small>
                         </div>
-                        <button class="btn btn-primary" onclick="updateBotConfig()" style="width: 100%;">💾 ذخیره تنظیمات و راه‌اندازی مجدد ربات</button>
-                        <div id="config-update-result"></div>
+                        <button class="btn btn-primary" onclick="updateBotConfig()" style="width: 100%;" id="save-config-btn">💾 ذخیره تنظیمات و راه‌اندازی مجدد ربات</button>
+                        <div id="config-update-result" style="margin-top: 10px; min-height: 20px;"></div>
                     </div>
                 </div>
 
@@ -225,12 +225,22 @@ if (!empty($APIKEY) && $APIKEY !== '{API_KEY}') {
     }
     
     function updateBotConfig() {
-        console.log('updateBotConfig called');
-        const bot_token = document.getElementById('bot_token').value.trim();
-        const admin_id = document.getElementById('admin_id').value.trim();
-        const domain = document.getElementById('domain')?.value.trim() || '';
+        console.log('=== updateBotConfig START ===');
+        const bot_token_elem = document.getElementById('bot_token');
+        const admin_id_elem = document.getElementById('admin_id');
+        const domain_elem = document.getElementById('domain');
         
-        console.log('Values:', {bot_token: bot_token.substring(0,10)+'...', admin_id, domain});
+        if (!bot_token_elem || !admin_id_elem) {
+            console.error('Input elements not found!');
+            alert('خطا: فیلدهای ورودی یافت نشدند');
+            return;
+        }
+        
+        const bot_token = bot_token_elem.value.trim();
+        const admin_id = admin_id_elem.value.trim();
+        const domain = (domain_elem ? domain_elem.value.trim() : '') || '';
+        
+        console.log('Values:', {bot_token: bot_token.substring(0,10)+'...', admin_id, domain, csrfToken: csrfToken.substring(0,10)+'...'});
         
         if (!bot_token || !admin_id) {
             showAlert('error', 'لطفا توکن ربات و آیدی ادمین را وارد کنید');
