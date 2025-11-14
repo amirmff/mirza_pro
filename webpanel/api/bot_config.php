@@ -4,9 +4,15 @@
  * Handles all bot configuration operations
  */
 
+// Prevent any output before JSON
+ob_start();
+
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/config_updater.php';
 require_once __DIR__ . '/../includes/bot_control.php';
+
+// Clear any output that might have been generated
+ob_clean();
 
 header('Content-Type: application/json');
 
@@ -39,6 +45,7 @@ switch ($action) {
         $domain = trim($_POST['domain'] ?? '');
         
         if (empty($bot_token) || empty($admin_id)) {
+            ob_clean();
             echo json_encode(['success' => false, 'message' => 'Bot token and admin ID are required']);
             exit;
         }
@@ -84,24 +91,28 @@ switch ($action) {
             
             log_activity($currentAdmin['id_admin'], 'bot_config_update', "Updated bot configuration");
             
+            ob_clean();
             echo json_encode([
                 'success' => true,
                 'message' => 'Configuration updated successfully',
                 'bot_restarted' => $bot_restarted,
                 'webhook_url' => $webhook_url
             ]);
+            exit;
             
         } catch (Exception $e) {
             error_log("Bot config update error: " . $e->getMessage());
+            ob_clean();
             echo json_encode([
                 'success' => false,
                 'message' => 'Failed: ' . $e->getMessage()
             ]);
+            exit;
         }
-        break;
         
     case 'get_config':
         require_once __DIR__ . '/../../config.php';
+        ob_clean(); // Clear any output from config.php
         echo json_encode([
             'success' => true,
             'config' => [
@@ -111,9 +122,10 @@ switch ($action) {
                 'bot_username' => $usernamebot ?? ''
             ]
         ]);
-        break;
+        exit;
         
     default:
+        ob_clean();
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
-        break;
+        exit;
 }
