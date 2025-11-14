@@ -24,8 +24,22 @@ class ConfigUpdater {
      * Update config.php with all set values
      */
     public function update() {
-        if (!file_exists($this->config_file) || !is_writable($this->config_file)) {
-            throw new Exception("Config file not writable: " . $this->config_file);
+        if (!file_exists($this->config_file)) {
+            throw new Exception("Config file not found: " . $this->config_file);
+        }
+        
+        if (!is_readable($this->config_file)) {
+            throw new Exception("Config file not readable: " . $this->config_file);
+        }
+        
+        if (!is_writable($this->config_file)) {
+            // Try to fix permissions automatically
+            $real_path = realpath($this->config_file);
+            @chmod($real_path, 0664);
+            
+            if (!is_writable($real_path)) {
+                throw new Exception("Config file not writable: " . $this->config_file . ". Please run: chown www-data:www-data " . $real_path . " && chmod 664 " . $real_path);
+            }
         }
         
         $content = file_get_contents($this->config_file);
