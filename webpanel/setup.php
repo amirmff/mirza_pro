@@ -271,27 +271,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 sleep(1);
                 
                 // Reread and update supervisor config
-                @exec('supervisorctl reread 2>&1', $supervisor_out, $supervisor_code);
-                @exec('supervisorctl update 2>&1', $supervisor_out, $supervisor_code);
+                @exec('supervisorctl reread 2>&1');
+                @exec('supervisorctl update 2>&1');
                 
                 // Start bot
                 @exec('supervisorctl start mirza_bot 2>&1', $supervisor_out, $supervisor_code);
-                sleep(3); // Give bot time to start
+                sleep(2);
                 
-                // Verify bot started - check multiple times
+                // Verify bot started - check multiple times with retries
                 $bot_running = false;
-                for ($i = 0; $i < 3; $i++) {
+                for ($i = 0; $i < 5; $i++) {
                     @exec('supervisorctl status mirza_bot 2>&1', $status_out, $status_code);
-                    if (!empty($status_out[0]) && strpos($status_out[0], 'RUNNING') !== false) {
-                        $bot_running = true;
-                        break;
+                    if (!empty($status_out[0])) {
+                        $status_line = $status_out[0];
+                        if (strpos($status_line, 'RUNNING') !== false) {
+                            $bot_running = true;
+                            break;
+                        }
                     }
-                    sleep(2);
+                    sleep(1);
                 }
                 
                 if (!$bot_running) {
-                    error_log("Bot failed to start after config update. Status: " . implode("\n", $status_out));
-                    // Don't throw exception - let setup complete, user can check logs
+                    error_log("Bot may not have started. Status: " . implode("\n", $status_out));
+                    // Try one more time
+                    @exec('supervisorctl start mirza_bot 2>&1');
+                    sleep(2);
                 }
             }
             
