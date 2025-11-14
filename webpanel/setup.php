@@ -166,9 +166,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db_user_escaped = addslashes($_SESSION['db_user']);
                 $db_pass_escaped = addslashes($_SESSION['db_pass']);
                 
-                // Update bot token - replace ALL instances (both in early return and main section)
+                // Update bot token - replace ALL instances (handle both placeholder {API_KEY} and any existing value)
                 $config_content = preg_replace(
                     "/\\\$APIKEY\s*=\s*['\"][^'\"]*['\"];/",
+                    "\$APIKEY = '{$bot_token_escaped}';",
+                    $config_content
+                );
+                
+                // Also replace placeholder format specifically
+                $config_content = str_replace(
+                    "\$APIKEY = '{API_KEY}';",
                     "\$APIKEY = '{$bot_token_escaped}';",
                     $config_content
                 );
@@ -180,11 +187,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $config_content
                 );
                 
+                // Also replace placeholder format specifically
+                $config_content = str_replace(
+                    "\$adminnumber = '{admin_number}';",
+                    "\$adminnumber = '{$admin_id_escaped}';",
+                    $config_content
+                );
+                
                 // Update domain if provided - replace ALL instances
                 if (!empty($_SESSION['domain'])) {
                     $domain_escaped = addslashes($_SESSION['domain']);
                     $config_content = preg_replace(
                         "/\\\$domainhosts\s*=\s*['\"][^'\"]*['\"];/",
+                        "\$domainhosts = '{$domain_escaped}';",
+                        $config_content
+                    );
+                    // Also replace placeholder format specifically
+                    $config_content = str_replace(
+                        "\$domainhosts = '{domain_name}';",
                         "\$domainhosts = '{$domain_escaped}';",
                         $config_content
                     );
@@ -202,6 +222,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             "\$usernamebot = '{$bot_username_escaped}';",
                             $config_content
                         );
+                        // Also replace placeholder format
+                        $config_content = str_replace(
+                            "\$usernamebot = '{username_bot}';",
+                            "\$usernamebot = '{$bot_username_escaped}';",
+                            $config_content
+                        );
                     }
                 }
                 
@@ -211,13 +237,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "\$dbname = '{$db_name_escaped}';",
                     $config_content
                 );
+                $config_content = str_replace(
+                    "\$dbname = '{database_name}';",
+                    "\$dbname = '{$db_name_escaped}';",
+                    $config_content
+                );
+                
                 $config_content = preg_replace(
                     "/\\\$usernamedb\s*=\s*['\"][^'\"]*['\"];/",
                     "\$usernamedb = '{$db_user_escaped}';",
                     $config_content
                 );
+                $config_content = str_replace(
+                    "\$usernamedb = '{username_db}';",
+                    "\$usernamedb = '{$db_user_escaped}';",
+                    $config_content
+                );
+                
                 $config_content = preg_replace(
                     "/\\\$passworddb\s*=\s*['\"][^'\"]*['\"];/",
+                    "\$passworddb = '{$db_pass_escaped}';",
+                    $config_content
+                );
+                $config_content = str_replace(
+                    "\$passworddb = '{password_db}';",
                     "\$passworddb = '{$db_pass_escaped}';",
                     $config_content
                 );
