@@ -63,11 +63,27 @@ if (isset($APIKEY)) {
 }
 ?>
 
-<?php $admin = $currentAdmin; ?>
-<div class="container">
-    <div class="page-header">
-        <h1><?php echo $page_title; ?></h1>
-    </div>
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo $page_title; ?> - Mirza Pro Admin Panel</title>
+    <link rel="stylesheet" href="/webpanel/assets/css/style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <?php 
+        $admin = $currentAdmin;
+        include __DIR__ . '/includes/sidebar.php'; 
+        ?>
+        
+        <main class="main-content">
+            <div class="topbar">
+                <h1><?php echo $page_title; ?></h1>
+            </div>
+            
+            <div class="container">
     
     <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px;">
         <!-- Bot Status Card -->
@@ -172,8 +188,11 @@ if (isset($APIKEY)) {
         <div id="logs-content" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 13px; max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">
             در حال بارگذاری...
         </div>
+            </div>
+        </main>
     </div>
-</div>
+    
+    <script src="/webpanel/assets/js/main.js"></script>
 
 <script>
 function controlBot(action) {
@@ -369,10 +388,10 @@ function showAlert(type, message) {
     color: white;
 }
 
-.btn-sm {
+    .btn-sm {
     padding: 6px 12px;
     font-size: 13px;
 }
 </style>
-
-<?php include 'includes/footer.php'; ?>
+</body>
+</html>

@@ -178,7 +178,10 @@ body {
     border-right: 3px solid transparent;
     position: relative;
     margin: 4px 12px;
-    border-radius: 8px;
+    border-radius: 10px;
+    font-weight: 500;
+    font-size: 14px;
+    backdrop-filter: blur(10px);
 }
 
 .nav-item::before {
@@ -195,9 +198,10 @@ body {
 }
 
 .nav-item:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    transform: translateX(-4px);
+    background: linear-gradient(90deg, rgba(0, 243, 255, 0.1), transparent);
+    color: var(--neon-cyan);
+    transform: translateX(-6px);
+    box-shadow: 0 4px 12px rgba(0, 243, 255, 0.2);
 }
 
 .nav-item:hover::before {
@@ -206,10 +210,12 @@ body {
 }
 
 .nav-item.active {
-    background: linear-gradient(90deg, rgba(0, 243, 255, 0.15), transparent);
+    background: linear-gradient(90deg, rgba(0, 243, 255, 0.2), rgba(0, 243, 255, 0.05));
     border-right-color: var(--neon-cyan);
     color: var(--neon-cyan);
-    box-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.4), inset 0 0 20px rgba(0, 243, 255, 0.1);
+    font-weight: 600;
+    transform: translateX(-2px);
 }
 
 .nav-item.active::before {

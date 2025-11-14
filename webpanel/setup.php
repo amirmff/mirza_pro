@@ -159,16 +159,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (file_exists($config_file) && is_writable($config_file)) {
                 $config_content = file_get_contents($config_file);
                 
-                // Update bot token
+                // Update bot token (handle both placeholder and existing value formats)
                 $config_content = preg_replace(
-                    "/\\\$APIKEY\s*=\s*'[^']*';/",
+                    "/\\\$APIKEY\s*=\s*['\"][^'\"]*['\"];/",
                     "\$APIKEY = '{$_SESSION['bot_token']}';",
                     $config_content
                 );
                 
                 // Update admin ID
                 $config_content = preg_replace(
-                    "/\\\$adminnumber\s*=\s*'[^']*';/",
+                    "/\\\$adminnumber\s*=\s*['\"][^'\"]*['\"];/",
                     "\$adminnumber = '{$_SESSION['admin_id']}';",
                     $config_content
                 );
@@ -176,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Update domain if provided
                 if (!empty($_SESSION['domain'])) {
                     $config_content = preg_replace(
-                        "/\\\$domainhosts\s*=\s*'[^']*';/",
+                        "/\\\$domainhosts\s*=\s*['\"][^'\"]*['\"];/",
                         "\$domainhosts = '{$_SESSION['domain']}';",
                         $config_content
                     );
@@ -189,14 +189,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($bot_data && $bot_data['ok'] && isset($bot_data['result']['username'])) {
                         $bot_username = $bot_data['result']['username'];
                         $config_content = preg_replace(
-                            "/\\\$usernamebot\s*=\s*'[^']*';/",
+                            "/\\\$usernamebot\s*=\s*['\"][^'\"]*['\"];/",
                             "\$usernamebot = '@{$bot_username}';",
                             $config_content
                         );
                     }
                 }
                 
+                // Also update database credentials if they're still placeholders
+                $config_content = preg_replace(
+                    "/\\\$dbname\s*=\s*['\"][^'\"]*['\"];/",
+                    "\$dbname = '{$_SESSION['db_name']}';",
+                    $config_content
+                );
+                $config_content = preg_replace(
+                    "/\\\$usernamedb\s*=\s*['\"][^'\"]*['\"];/",
+                    "\$usernamedb = '{$_SESSION['db_user']}';",
+                    $config_content
+                );
+                $config_content = preg_replace(
+                    "/\\\$passworddb\s*=\s*['\"][^'\"]*['\"];/",
+                    "\$passworddb = '{$_SESSION['db_pass']}';",
+                    $config_content
+                );
+                
                 file_put_contents($config_file, $config_content);
+                
+                // Verify the update worked
+                $verify_content = file_get_contents($config_file);
+                if (strpos($verify_content, $_SESSION['bot_token']) === false) {
+                    error_log("Warning: config.php update may have failed - bot token not found in file");
+                }
+            } else {
+                error_log("Error: config.php not writable or not found: " . $config_file);
             }
             
             // Update setting table with admin ID and bot token
@@ -243,15 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
-            // Start bot via supervisor
-            if (function_exists('exec')) {
-                @exec('supervisorctl reread 2>&1', $supervisor_out, $supervisor_code);
-                @exec('supervisorctl update 2>&1', $supervisor_out, $supervisor_code);
-                @exec('supervisorctl start mirza_bot 2>&1', $supervisor_out, $supervisor_code);
-                sleep(2); // Give bot time to start
-            }
-            
-            // If domain provided, attempt SSL setup
+            // Reload nginx if domain provided (before SSL)
             if (!empty($_SESSION['domain'])) {
                 // Update nginx server_name
                 $nginx_config = '/etc/nginx/sites-available/mirza_pro';
@@ -265,10 +282,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     file_put_contents($nginx_config, $nginx_content);
                     @exec('nginx -t && systemctl reload nginx 2>&1');
                 }
+            }
+            
+            // Start bot via supervisor (must happen after config.php is updated)
+            if (function_exists('exec')) {
+                @exec('supervisorctl reread 2>&1', $supervisor_out, $supervisor_code);
+                @exec('supervisorctl update 2>&1', $supervisor_out, $supervisor_code);
+                @exec('supervisorctl stop mirza_bot 2>&1'); // Stop if running
+                sleep(1);
+                @exec('supervisorctl start mirza_bot 2>&1', $supervisor_out, $supervisor_code);
+                sleep(3); // Give bot time to start
                 
-                // Attempt SSL certificate (non-blocking, will complete in background)
+                // Verify bot started
+                @exec('supervisorctl status mirza_bot 2>&1', $status_out, $status_code);
+                if (!empty($status_out[0]) && strpos($status_out[0], 'RUNNING') === false) {
+                    error_log("Bot failed to start: " . implode("\n", $status_out));
+                }
+            }
+            
+            // If domain provided, attempt SSL setup (after nginx reload)
+            if (!empty($_SESSION['domain'])) {
+                // Ensure certbot is installed
                 $email = "admin@{$_SESSION['domain']}";
-                @exec("certbot --nginx -d {$_SESSION['domain']} --redirect --non-interactive --agree-tos -m {$email} 2>&1 > /dev/null &");
+                @exec("which certbot || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx 2>&1)", $certbot_check);
+                
+                // Issue SSL certificate (run in background but log output)
+                $ssl_log = '/tmp/ssl_install_' . time() . '.log';
+                @exec("certbot --nginx -d {$_SESSION['domain']} --redirect --non-interactive --agree-tos -m {$email} > {$ssl_log} 2>&1 &");
+                
+                // Wait a moment then check if SSL was successful
+                sleep(2);
+                if (file_exists("/etc/letsencrypt/live/{$_SESSION['domain']}/cert.pem")) {
+                    // SSL installed successfully, update webhook to HTTPS
+                    $webhook_url = "https://{$_SESSION['domain']}/index.php";
+                    $ch = curl_init("https://api.telegram.org/bot{$_SESSION['bot_token']}/setWebhook");
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => ['url' => $webhook_url],
+                        CURLOPT_TIMEOUT => 10
+                    ]);
+                    curl_exec($ch);
+                    curl_close($ch);
+                }
             }
             
             // Remove setup flag
