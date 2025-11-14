@@ -292,20 +292,77 @@ NGINX_CONFIG;
             }
         }
         
-        // Issue SSL certificate
-        $email = $email ?: "admin@{$domain}";
-        $certbot_cmd = "certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$email} 2>&1";
-        exec($certbot_cmd, $ssl_output, $ssl_code);
+        // Check if certificate already exists
+        $cert_path = "/etc/letsencrypt/live/{$domain}/cert.pem";
+        $cert_exists = file_exists($cert_path);
         
-        if ($ssl_code !== 0) {
-            $error = implode("\n", array_slice($ssl_output, -5));
-            throw new Exception("SSL installation failed: {$error}");
+        if (!$cert_exists) {
+            // Issue new SSL certificate
+            $email = $email ?: "admin@{$domain}";
+            $certbot_cmd = "certbot --nginx -d {$domain} --redirect --non-interactive --agree-tos -m {$email} 2>&1";
+            exec($certbot_cmd, $ssl_output, $ssl_code);
+            
+            if ($ssl_code !== 0) {
+                $error = implode("\n", array_slice($ssl_output, -5));
+                throw new Exception("SSL certificate issuance failed: {$error}");
+            }
+        } else {
+            // Certificate exists, use certbot install to configure Nginx
+            $install_cmd = "certbot install --cert-name {$domain} --nginx 2>&1";
+            exec($install_cmd, $install_output, $install_code);
+            
+            if ($install_code !== 0) {
+                // If install fails, try to manually configure
+                $this->configureSSLManually($domain);
+            }
         }
         
         // Reload Nginx after SSL installation
         $this->reload();
         
         return true;
+    }
+    
+    /**
+     * Manually configure SSL in Nginx config
+     */
+    private function configureSSLManually($domain) {
+        $cert_path = "/etc/letsencrypt/live/{$domain}/fullchain.pem";
+        $key_path = "/etc/letsencrypt/live/{$domain}/privkey.pem";
+        
+        if (!file_exists($cert_path) || !file_exists($key_path)) {
+            throw new Exception("SSL certificate files not found");
+        }
+        
+        // Read current config
+        $content = file_get_contents($this->config_file);
+        
+        // Check if SSL is already configured
+        if (strpos($content, 'listen 443') !== false) {
+            return; // Already configured
+        }
+        
+        // Add HTTPS server block
+        $https_block = "\n\nserver {\n    listen 443 ssl http2;\n    listen [::]:443 ssl http2;\n    server_name {$domain};\n    \n    ssl_certificate {$cert_path};\n    ssl_certificate_key {$key_path};\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers HIGH:!aNULL:!MD5;\n    ssl_prefer_server_ciphers on;\n    \n    " . str_replace('server {', '', $content) . "\n}";
+        
+        // Also add redirect from HTTP to HTTPS
+        $http_block = preg_replace('/server_name\s+[^;]+;/', "server_name {$domain};\n    return 301 https://\$server_name\$request_uri;", $content);
+        
+        $new_content = $http_block . $https_block;
+        
+        // Write updated config
+        if (is_writable($this->config_file)) {
+            file_put_contents($this->config_file, $new_content);
+        } else {
+            $temp_file = sys_get_temp_dir() . '/mirza_nginx_' . uniqid() . '.conf';
+            file_put_contents($temp_file, $new_content);
+            exec("sudo cp " . escapeshellarg($temp_file) . " " . escapeshellarg($this->config_file) . " 2>&1", $cp_out, $cp_code);
+            @unlink($temp_file);
+            
+            if ($cp_code !== 0) {
+                throw new Exception("Failed to write SSL configuration");
+            }
+        }
     }
     
     /**
