@@ -266,17 +266,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Start bot via supervisor (must happen after config.php is updated)
             if (function_exists('exec')) {
+                // Stop bot first if running
+                @exec('supervisorctl stop mirza_bot 2>&1');
+                sleep(1);
+                
+                // Reread and update supervisor config
                 @exec('supervisorctl reread 2>&1', $supervisor_out, $supervisor_code);
                 @exec('supervisorctl update 2>&1', $supervisor_out, $supervisor_code);
-                @exec('supervisorctl stop mirza_bot 2>&1'); // Stop if running
-                sleep(1);
+                
+                // Start bot
                 @exec('supervisorctl start mirza_bot 2>&1', $supervisor_out, $supervisor_code);
                 sleep(3); // Give bot time to start
                 
-                // Verify bot started
-                @exec('supervisorctl status mirza_bot 2>&1', $status_out, $status_code);
-                if (!empty($status_out[0]) && strpos($status_out[0], 'RUNNING') === false) {
-                    error_log("Bot failed to start: " . implode("\n", $status_out));
+                // Verify bot started - check multiple times
+                $bot_running = false;
+                for ($i = 0; $i < 3; $i++) {
+                    @exec('supervisorctl status mirza_bot 2>&1', $status_out, $status_code);
+                    if (!empty($status_out[0]) && strpos($status_out[0], 'RUNNING') !== false) {
+                        $bot_running = true;
+                        break;
+                    }
+                    sleep(2);
+                }
+                
+                if (!$bot_running) {
+                    error_log("Bot failed to start after config update. Status: " . implode("\n", $status_out));
+                    // Don't throw exception - let setup complete, user can check logs
                 }
             }
             
