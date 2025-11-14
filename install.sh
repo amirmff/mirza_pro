@@ -658,6 +658,10 @@ NGINX_EOF
     # Enable site
     ln -sf /etc/nginx/sites-available/mirza_pro /etc/nginx/sites-enabled/
     
+    # Set proper permissions for web panel to update config
+    chown www-data:www-data /etc/nginx/sites-available/mirza_pro
+    chmod 664 /etc/nginx/sites-available/mirza_pro
+    
     # Test, enable and start Nginx with custom port
     run_with_spinner "Testing and starting Nginx on port $HTTP_PORT" \
         "nginx -t && systemctl enable nginx && systemctl start nginx"
